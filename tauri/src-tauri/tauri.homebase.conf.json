@@ -1,0 +1,10 @@
+{
+  "productName": "Minutes Homebase Dev",
+  "identifier": "com.useminutes.desktop.homebase-dev",
+  "build": {
+    "frontendDist": "../ui/dist"
+  },
+  "app": {
+    "macOSPrivateApi": true
+  }
+}

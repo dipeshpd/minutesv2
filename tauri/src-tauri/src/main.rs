@@ -269,8 +269,8 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) {
         // Empty title hides the centered "Minutes" text in any native chrome.
         // The in-app brand mark (italic m + recording dot) carries the identity.
         .title("")
-        .inner_size(560.0, 700.0)
-        .min_inner_size(460.0, 520.0)
+        .inner_size(1120.0, 760.0)
+        .min_inner_size(760.0, 560.0)
         // The main window is hidden, shown, and resized while the app lives in
         // the tray. On macOS 26, keeping that long-lived WebView transparent
         // and backed by vibrancy can trip a WebKit frame-update PAC trap when

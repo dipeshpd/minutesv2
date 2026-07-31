@@ -2638,6 +2638,7 @@ fn main() {
             commands::cmd_list_meetings,
             commands::cmd_search,
             commands::cmd_add_note,
+            commands::cmd_recent_live_transcript,
             commands::cmd_sensitive_start,
             commands::cmd_sensitive_stop,
             commands::cmd_run_meeting_debrief,

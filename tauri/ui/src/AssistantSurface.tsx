@@ -50,6 +50,7 @@ type AssistantFrameProps = {
   onTabChange?: (tab: string) => void
   onClose: () => void
   dragRegion?: boolean
+  modal?: boolean
   className?: string
   children: ReactNode
 }
@@ -96,11 +97,17 @@ export function AssistantFrame({
   onTabChange,
   onClose,
   dragRegion = false,
+  modal = false,
   className = '',
   children,
 }: AssistantFrameProps) {
   return (
-    <section className={`assistant-frame ${className}`.trim()}>
+    <section
+      className={`assistant-frame ${className}`.trim()}
+      role={modal ? 'dialog' : undefined}
+      aria-modal={modal || undefined}
+      aria-label={modal ? title : undefined}
+    >
       <header className="assistant-header" data-tauri-drag-region={dragRegion ? '' : undefined}>
         <div className="assistant-identity" data-tauri-drag-region={dragRegion ? '' : undefined}>
           {leading}

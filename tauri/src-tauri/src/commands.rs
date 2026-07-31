@@ -6515,6 +6515,39 @@ pub fn cmd_add_note(text: String) -> Result<String, String> {
     minutes_core::notes::add_note(&text)
 }
 
+#[tauri::command]
+pub fn cmd_recent_live_transcript(since_ms: Option<u64>) -> Result<serde_json::Value, String> {
+    let duration_ms = since_ms
+        .unwrap_or(5 * 60 * 1_000)
+        .clamp(1_000, 30 * 60 * 1_000);
+    let lines = minutes_core::live_transcript::read_since_duration(duration_ms)
+        .map_err(|error| error.to_string())?;
+    let text = lines
+        .iter()
+        .filter_map(|line| {
+            let text = line.text.trim();
+            if text.is_empty() {
+                None
+            } else if let Some(speaker) = line
+                .speaker
+                .as_deref()
+                .map(str::trim)
+                .filter(|speaker| !speaker.is_empty())
+            {
+                Some(format!("{speaker}: {text}"))
+            } else {
+                Some(text.to_string())
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    Ok(serde_json::json!({
+        "text": text,
+        "lineCount": lines.len(),
+    }))
+}
+
 /// Start a no-capture sensitive meeting from the desktop app.
 #[tauri::command]
 pub fn cmd_sensitive_start(title: Option<String>) -> Result<serde_json::Value, String> {
@@ -12076,6 +12109,46 @@ mod tests {
                 );
                 assert!(full.get(key).is_some(), "full status missing {key}");
             }
+        });
+    }
+
+    #[test]
+    fn recent_live_transcript_returns_reviewable_text() {
+        with_temp_home(|_| {
+            let path = minutes_core::pid::live_transcript_jsonl_path();
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let lines = [
+                minutes_core::live_transcript::TranscriptLine {
+                    line: 1,
+                    ts: chrono::Local::now(),
+                    offset_ms: 1_000,
+                    duration_ms: 800,
+                    text: "Send the rollout draft".into(),
+                    speaker: Some("Alex".into()),
+                },
+                minutes_core::live_transcript::TranscriptLine {
+                    line: 2,
+                    ts: chrono::Local::now(),
+                    offset_ms: 2_000,
+                    duration_ms: 900,
+                    text: "Include the launch risks".into(),
+                    speaker: None,
+                },
+            ];
+            let jsonl = lines
+                .iter()
+                .map(|line| serde_json::to_string(line).unwrap())
+                .collect::<Vec<_>>()
+                .join("\n");
+            fs::write(path, format!("{jsonl}\n")).unwrap();
+
+            let draft = cmd_recent_live_transcript(Some(60_000)).unwrap();
+
+            assert_eq!(draft["lineCount"], 2);
+            assert_eq!(
+                draft["text"],
+                "Alex: Send the rollout draft\nInclude the launch risks"
+            );
         });
     }
 

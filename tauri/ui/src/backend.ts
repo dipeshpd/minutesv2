@@ -154,6 +154,11 @@ export interface RecordingStatus {
   } | null
 }
 
+export interface LiveTranscriptDraft {
+  text: string
+  lineCount: number
+}
+
 export interface RecordingStartOptions {
   mode?: 'meeting' | 'quick-thought'
   title?: string
@@ -461,6 +466,12 @@ export async function addRecordingNote(text: string) {
   if (!normalized) throw new Error('Write a note before saving it.')
   const invoke = requireDesktopInvoke()
   return invoke<string>('cmd_add_note', { text: normalized })
+}
+
+export async function getRecentLiveTranscript(sinceMs = 5 * 60 * 1000): Promise<LiveTranscriptDraft> {
+  const invoke = desktopInvoke()
+  if (!invoke) return { text: '', lineCount: 0 }
+  return invoke<LiveTranscriptDraft>('cmd_recent_live_transcript', { sinceMs })
 }
 
 export async function getMeetingDetail(path: string) {

@@ -16,6 +16,7 @@ import {
   getMeetingDetail,
   getMeetingHelperStatus,
   getMicrophonePermission,
+  getRecentLiveTranscript,
   isDesktopApp,
   listenForHelperNextSteps,
   loadHomebaseData,
@@ -1359,6 +1360,7 @@ function CapturePanel({
   busy,
   onClose,
   onStart,
+  onStop,
   onSave,
 }: {
   kind: CapturePanelKind
@@ -1366,24 +1368,87 @@ function CapturePanel({
   busy: string | null
   onClose: () => void
   onStart: () => Promise<void>
+  onStop: () => Promise<void>
   onSave: (text: string) => Promise<void>
 }) {
   const [text, setText] = useState('')
+  const [todoTitle, setTodoTitle] = useState('')
+  const [todoDescription, setTodoDescription] = useState('')
+  const [transcriptLineCount, setTranscriptLineCount] = useState(0)
+  const [transcriptEdited, setTranscriptEdited] = useState(false)
+  const [transcriptStatus, setTranscriptStatus] = useState('')
   const [error, setError] = useState('')
   const [view, setView] = useState<'capture' | 'chat'>('capture')
-  const title = kind === 'todo' ? 'Capture action item' : 'Add recording note'
+  const descriptionRef = useRef<HTMLTextAreaElement>(null)
+  const isTodo = kind === 'todo'
+  const title = isTodo ? 'To-do Helper' : 'Add recording note'
+
+  useEffect(() => {
+    if (!isTodo || !capture.recording || view !== 'capture') return
+
+    let disposed = false
+    const refreshTranscript = async () => {
+      try {
+        const draft = await getRecentLiveTranscript()
+        if (disposed) return
+        setTranscriptLineCount(draft.lineCount)
+        setTranscriptStatus('')
+        if (!transcriptEdited && draft.text.trim()) {
+          setTodoDescription(draft.text.trim())
+        }
+      } catch {
+        if (!disposed) {
+          setTranscriptStatus('Live transcript is unavailable. You can still type the description.')
+        }
+      }
+    }
+
+    void refreshTranscript()
+    const timer = window.setInterval(refreshTranscript, 1500)
+    return () => {
+      disposed = true
+      window.clearInterval(timer)
+    }
+  }, [capture.recording, isTodo, transcriptEdited, view])
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
-    if (!text.trim()) {
-      setError('Write something before saving.')
+    if (isTodo) {
+      if (!capture.recording) {
+        setError('Start recording before creating this to-do.')
+        return
+      }
+      if (!todoTitle.trim()) {
+        setError('Add a title for this to-do.')
+        return
+      }
+    } else if (!text.trim()) {
+      setError('Write a note before saving.')
       return
     }
     setError('')
     try {
-      await onSave(kind === 'todo' ? `ACTION ITEM: ${text.trim()}` : text.trim())
-    } catch (error) {
-      setError(errorMessage(error))
+      if (isTodo) {
+        const description = todoDescription.trim()
+        await onSave(`ACTION ITEM: ${todoTitle.trim()}${description ? ` — ${description}` : ''}`)
+      } else {
+        await onSave(text.trim())
+      }
+    } catch (nextError) {
+      setError(errorMessage(nextError))
+    }
+  }
+
+  const toggleRecording = async () => {
+    setError('')
+    try {
+      if (capture.recording) {
+        await onStop()
+      } else {
+        await onStart()
+      }
+    } catch (nextError) {
+      setError(errorMessage(nextError))
     }
   }
 
@@ -1393,31 +1458,119 @@ function CapturePanel({
     }}>
       <AssistantFrame
         title={title}
-        subtitle={capture.recording ? 'Timestamped to the active recording' : 'Meeting-aware capture'}
+        subtitle={isTodo
+          ? 'Capture and review a follow-up'
+          : capture.recording
+            ? 'Timestamped to the active recording'
+            : 'Meeting-aware capture'}
         status={(
           <>
             <span className={`capture-status-dot ${capture.recording ? 'recording' : ''}`} aria-hidden="true" />
-            <span>{capture.recording ? capture.elapsed || 'Recording' : 'Ready'}</span>
+            <span>{capture.recording ? capture.elapsed || 'Recording' : capture.starting ? 'Starting' : 'Ready'}</span>
           </>
         )}
+        actions={isTodo ? (
+          <button
+            type="button"
+            className={`assistant-icon-button todo-audio-control${capture.recording ? ' recording' : ''}`}
+            aria-label={capture.recording ? 'Stop recording' : 'Start recording'}
+            title={capture.recording ? 'Stop recording' : 'Start recording'}
+            disabled={Boolean(busy) || capture.starting}
+            onClick={() => void toggleRecording()}
+          >
+            <RecordIcon stop={capture.recording} />
+          </button>
+        ) : null}
         tabs={[
-          { id: 'capture', label: 'Capture' },
+          { id: 'capture', label: isTodo ? 'To-do' : 'Capture' },
           { id: 'chat', label: 'Ask Claude' },
         ]}
         activeTab={view}
         onTabChange={(next) => setView(next as 'capture' | 'chat')}
         onClose={onClose}
+        modal
         className="capture-assistant-frame"
       >
         <div className={`capture-assistant-pane ${view === 'capture' ? 'active' : ''}`}>
-          {capture.recording ? (
+          {isTodo ? (
+            <form className="todo-helper-form" onSubmit={submit}>
+              <div className="todo-helper-intro">
+                <strong>Turn the follow-up into a clear task.</strong>
+                <span>Type a title and press Return, then review or correct the live transcript before creating the to-do.</span>
+              </div>
+              <label className="todo-helper-field" htmlFor="todo-helper-title">
+                <span>Title</span>
+                <input
+                  id="todo-helper-title"
+                  value={todoTitle}
+                  maxLength={160}
+                  placeholder="What needs to happen?"
+                  autoFocus
+                  onChange={(event) => setTodoTitle(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      descriptionRef.current?.focus()
+                    }
+                  }}
+                />
+              </label>
+              <label className="todo-helper-field description" htmlFor="todo-helper-description">
+                <span>
+                  Description
+                  <small>
+                    {capture.recording
+                      ? transcriptLineCount > 0
+                        ? `${transcriptLineCount} transcript ${transcriptLineCount === 1 ? 'line' : 'lines'} ready to review`
+                        : 'Listening for transcript'
+                      : 'Add context or start recording'}
+                  </small>
+                </span>
+                <textarea
+                  ref={descriptionRef}
+                  id="todo-helper-description"
+                  value={todoDescription}
+                  maxLength={1200}
+                  placeholder="Add context, an owner, or the relevant transcript."
+                  onChange={(event) => {
+                    setTodoDescription(event.target.value)
+                    setTranscriptEdited(true)
+                  }}
+                  onKeyDown={(event) => {
+                    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                      event.preventDefault()
+                      event.currentTarget.form?.requestSubmit()
+                    }
+                  }}
+                />
+              </label>
+              <footer className="todo-helper-footer">
+                <span role="status">
+                  {transcriptStatus
+                    || (capture.recording
+                      ? transcriptEdited
+                        ? 'Your edits are preserved while recording continues.'
+                        : 'Live transcript will appear in the description.'
+                      : 'Start recording to attach this to the current meeting.')}
+                </span>
+                <button
+                  type="submit"
+                  className="assistant-button"
+                  disabled={!capture.recording || !todoTitle.trim() || Boolean(busy)}
+                >
+                  {busy === 'note' ? 'Creating' : 'Create to-do'}
+                </button>
+              </footer>
+              {error ? <div className="assistant-error" role="alert">{error}</div> : null}
+            </form>
+          ) : capture.recording ? (
             <form className="capture-assistant-form" onSubmit={submit}>
-              <label htmlFor="capture-note">{kind === 'todo' ? 'Action item' : 'Note'}</label>
+              <label htmlFor="capture-note">Note</label>
               <textarea
                 id="capture-note"
                 value={text}
                 maxLength={500}
-                placeholder={kind === 'todo' ? 'What needs to happen, and who owns it?' : 'What should Minutes remember?'}
+                placeholder="What should Minutes remember?"
                 onChange={(event) => setText(event.target.value)}
                 autoFocus
               />
@@ -1433,7 +1586,7 @@ function CapturePanel({
             <div className="capture-assistant-idle">
               <span className="inspector-kicker">Live capture</span>
               <h2>Start a recording to timestamp this item</h2>
-              <p>Claude chat is available now. Direct notes and action items attach to the active meeting timeline.</p>
+              <p>Claude chat is available now. Direct notes attach to the active meeting timeline.</p>
               {error ? <div className="assistant-error" role="alert">{error}</div> : null}
               <button
                 type="button"
@@ -1859,6 +2012,7 @@ export default function App() {
             busy={captureBusy}
             onClose={() => setCapturePanel(null)}
             onStart={() => handleStartRecording()}
+            onStop={handleStopRecording}
             onSave={handleSaveNote}
           />
         ) : null}

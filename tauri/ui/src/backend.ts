@@ -159,6 +159,11 @@ export interface CopilotStatus {
   goal: string
   detail: string
   limitation?: string | null
+  guidance?: {
+    cover?: string[]
+    followUp?: string[]
+    attention?: string[]
+  }
   nudge?: {
     text?: string
     title?: string
@@ -455,6 +460,11 @@ export async function startMeetingHelper(goal: string) {
 export async function stopMeetingHelper() {
   const invoke = requireDesktopInvoke()
   return invoke<CopilotStatus>('cmd_stop_copilot_surface')
+}
+
+export async function showMeetingHelper() {
+  const invoke = requireDesktopInvoke()
+  return invoke<CopilotStatus>('cmd_show_copilot_surface')
 }
 
 export async function pauseMeetingHelper() {

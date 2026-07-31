@@ -2737,6 +2737,7 @@ fn main() {
             commands::cmd_live_transcript_status,
             commands::cmd_start_copilot_surface,
             commands::cmd_stop_copilot_surface,
+            commands::cmd_show_copilot_surface,
             commands::cmd_pause_copilot_surface,
             commands::cmd_resume_copilot_surface,
             commands::cmd_dismiss_copilot_nudge,
@@ -3064,6 +3065,29 @@ mod tray_activity_tests {
         }
         assert!(hud.contains("id=\"nudge-text\""));
         assert!(hud.contains("@media (prefers-reduced-motion: reduce)"));
+    }
+
+    #[test]
+    fn homebase_copilot_hud_is_a_dedicated_interactive_surface() {
+        let manifest = env!("CARGO_MANIFEST_DIR");
+        let hud = std::fs::read_to_string(format!("{}/../ui/copilot-hud.html", manifest))
+            .expect("failed to read Homebase Coach HUD");
+
+        for contract in [
+            "data-tauri-drag-region",
+            "currentWindow.startDragging()",
+            "id=\"close\"",
+            "currentWindow.hide()",
+            "Points to cover",
+            "Follow up",
+            "Bring to attention",
+            "cmd_stop_copilot_surface",
+        ] {
+            assert!(
+                hud.contains(contract),
+                "Homebase Coach HUD must preserve interaction: {contract}"
+            );
+        }
     }
 
     #[test]

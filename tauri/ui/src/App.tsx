@@ -26,6 +26,7 @@ import {
   resumeMeetingHelper,
   searchLocalMemory,
   setupCoachModel,
+  showMeetingHelper,
   startMeetingHelper,
   startRecording,
   stopMeetingHelper,
@@ -1034,6 +1035,14 @@ function HelperView({
         <div className="helper-actions">
           {helper.active ? (
             <>
+              <button
+                type="button"
+                className="pill-button secondary"
+                disabled={Boolean(busy)}
+                onClick={() => run('show', showMeetingHelper)}
+              >
+                {busy === 'show' ? 'Opening' : 'Show helper'}
+              </button>
               <button
                 type="button"
                 className="pill-button secondary"

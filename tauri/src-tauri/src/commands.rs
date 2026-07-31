@@ -160,6 +160,64 @@ impl Drop for ResummarizeInFlightGuard {
 pub const DEFAULT_COPILOT_GOAL: &str =
     "Help me move this meeting toward clear decisions, owners, and next steps.";
 
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CopilotGuidance {
+    pub cover: Vec<String>,
+    pub follow_up: Vec<String>,
+    pub attention: Vec<String>,
+}
+
+impl CopilotGuidance {
+    fn for_goal(goal: &str) -> Self {
+        let mut guidance = Self::default();
+        push_copilot_guidance_item(&mut guidance.cover, goal);
+        guidance
+    }
+
+    fn from_battle_card(goal: &str, card: &minutes_core::copilot::BattleCard) -> Self {
+        let mut guidance = Self::default();
+        let cover_points: Vec<_> = card
+            .intents
+            .iter()
+            .chain(card.decisions.iter())
+            .take(3)
+            .collect();
+        for point in cover_points.into_iter().rev() {
+            push_copilot_guidance_item(&mut guidance.cover, point);
+        }
+        push_copilot_guidance_item(&mut guidance.cover, goal);
+        for point in card.open_commitments.iter().take(4).rev() {
+            push_copilot_guidance_item(&mut guidance.follow_up, point);
+        }
+        guidance
+    }
+}
+
+fn push_copilot_guidance_item(items: &mut Vec<String>, value: &str) {
+    let value = value.trim();
+    if value.is_empty() {
+        return;
+    }
+    items.retain(|item| !item.eq_ignore_ascii_case(value));
+    items.insert(0, value.to_string());
+    items.truncate(4);
+}
+
+fn add_copilot_nudge_to_guidance(
+    guidance: &mut CopilotGuidance,
+    kind: minutes_core::copilot::NudgeKind,
+    text: &str,
+) {
+    use minutes_core::copilot::NudgeKind;
+    let lane = match kind {
+        NudgeKind::Say => &mut guidance.cover,
+        NudgeKind::Ask | NudgeKind::Clarify => &mut guidance.follow_up,
+        NudgeKind::Hold | NudgeKind::Watch => &mut guidance.attention,
+    };
+    push_copilot_guidance_item(lane, text);
+}
+
 /// The complete presentation snapshot shared by the main window, Coach HUD,
 /// tray, and notification policy. Keeping the active nudge beside the core
 /// state prevents frontend windows from inventing their own lifecycle truth.
@@ -173,6 +231,7 @@ pub struct CopilotHudSnapshot {
     pub detail: String,
     pub limitation: Option<String>,
     pub nudge: Option<minutes_core::copilot::Nudge>,
+    pub guidance: CopilotGuidance,
     pub critical_notifications_enabled: bool,
 }
 
@@ -186,6 +245,7 @@ impl CopilotHudSnapshot {
             detail: "Coach is off.".into(),
             limitation: None,
             nudge: None,
+            guidance: CopilotGuidance::default(),
             critical_notifications_enabled,
         }
     }
@@ -11102,6 +11162,44 @@ mod tests {
     use std::sync::{Mutex, MutexGuard, OnceLock};
     use tempfile::TempDir;
 
+    #[test]
+    fn copilot_guidance_combines_goal_history_and_live_nudges() {
+        let card = minutes_core::copilot::BattleCard {
+            open_commitments: vec![
+                "Alex: send the rollout plan".into(),
+                "Sam: confirm the launch date".into(),
+            ],
+            decisions: vec!["Decide whether the pilot expands this week".into()],
+            intents: vec!["Review passwordless rollout risk".into()],
+            ..Default::default()
+        };
+        let mut guidance =
+            CopilotGuidance::from_battle_card("Leave with one accountable owner.", &card);
+
+        assert_eq!(guidance.cover[0], "Leave with one accountable owner.");
+        assert!(guidance
+            .cover
+            .contains(&"Review passwordless rollout risk".to_string()));
+        assert_eq!(guidance.follow_up[0], "Alex: send the rollout plan");
+
+        add_copilot_nudge_to_guidance(
+            &mut guidance,
+            minutes_core::copilot::NudgeKind::Clarify,
+            "Ask who signs off on the pilot.",
+        );
+        add_copilot_nudge_to_guidance(
+            &mut guidance,
+            minutes_core::copilot::NudgeKind::Watch,
+            "The launch date conflicts with the prior commitment.",
+        );
+
+        assert_eq!(guidance.follow_up[0], "Ask who signs off on the pilot.");
+        assert_eq!(
+            guidance.attention[0],
+            "The launch date conflicts with the prior commitment."
+        );
+    }
+
     fn test_guard() -> MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
@@ -15767,12 +15865,10 @@ fn copilot_presentation_state(
 /// Build the Coach HUD with the same window contract as dictation: destroy a
 /// stale same-label WebView, anchor to the current monitor work area, keep the
 /// transparent undecorated surface above other windows, and never activate it.
-/// Coach HUD window size — single source of truth for the builder AND
-/// main.rs `window_base_size` (two desync bugs came from keeping these in
-/// separate files). The card is 492x211 inside; the margins exist so the
-/// 54px-blur card shadow fades out instead of hard-clipping into a square
-/// edge at the transparent window's rect (QA round 3).
-pub(crate) const COPILOT_HUD_SIZE: (f64, f64) = (572.0, 279.0);
+/// Coach HUD window size — single source of truth for the builder and
+/// main.rs `window_base_size`. The compact guidance panel keeps enough room
+/// for three recommendation lanes without becoming a second app window.
+pub(crate) const COPILOT_HUD_SIZE: (f64, f64) = (520.0, 460.0);
 
 fn show_copilot_hud(app: &tauri::AppHandle) -> Result<(), String> {
     use tauri::WebviewUrl;
@@ -15945,12 +16041,14 @@ fn run_copilot_surface(context: CopilotSurfaceRunContext) {
         return;
     }
 
+    let prepared_guidance = CopilotGuidance::from_battle_card(&goal, &battle_card);
     publish_copilot_hud(&app, &hud, |snapshot| {
         snapshot.detail = format!(
             "Meeting context ready. Warming the local {} model…",
             config.copilot.fast_model
         );
         snapshot.limitation = context_limitation.clone();
+        snapshot.guidance = prepared_guidance;
     });
 
     let model = Arc::new(OllamaCopilotModel::from_config(&config.copilot));
@@ -16068,6 +16166,11 @@ fn run_copilot_surface(context: CopilotSurfaceRunContext) {
                         );
                         snapshot.limitation = limitation;
                         snapshot.nudge = Some(nudge.clone());
+                        add_copilot_nudge_to_guidance(
+                            &mut snapshot.guidance,
+                            nudge.kind,
+                            &nudge.text,
+                        );
                     });
                     app.emit("copilot:nudge", nudge.clone()).ok();
                     maybe_show_copilot_notification(&app, &critical_notifications_enabled, &nudge);
@@ -16241,6 +16344,7 @@ pub fn cmd_start_copilot_surface(
             ),
             limitation: None,
             nudge: None,
+            guidance: CopilotGuidance::for_goal(&goal),
             critical_notifications_enabled: notifications,
         };
     });
@@ -16287,6 +16391,24 @@ pub fn cmd_stop_copilot_surface(
     state.copilot_stop_flag.store(true, Ordering::SeqCst);
     minutes_core::copilot::request_stop()
         .map_err(|error| format!("Could not request Coach stop: {error}"))?;
+    Ok(current_copilot_hud(&state.copilot_hud))
+}
+
+#[tauri::command]
+pub fn cmd_show_copilot_surface(
+    app: tauri::AppHandle,
+    state: tauri::State<AppState>,
+) -> Result<CopilotHudSnapshot, String> {
+    if !state.copilot_active.load(Ordering::SeqCst) {
+        return Err("Coach is not active.".into());
+    }
+    if let Some(window) = app.get_webview_window("copilot-hud") {
+        window
+            .show()
+            .map_err(|error| format!("Could not show the Coach HUD: {error}"))?;
+    } else {
+        show_copilot_hud(&app)?;
+    }
     Ok(current_copilot_hud(&state.copilot_hud))
 }
 

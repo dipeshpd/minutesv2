@@ -1,0 +1,642 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Minutes Meeting Helper</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+        font-synthesis: none;
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+        --panel: #20201f;
+        --surface: #292928;
+        --surface-hover: #323230;
+        --line: rgba(255, 255, 255, 0.1);
+        --line-strong: rgba(255, 255, 255, 0.17);
+        --text: #eeeae2;
+        --muted: #aaa7a0;
+        --faint: #77736c;
+        --cyan: #8bd5dd;
+        --lavender: #d6c7ff;
+        --coral: #ef8a79;
+        --green: #68d985;
+        --shadow: 0 18px 42px rgba(0, 0, 0, 0.44);
+      }
+
+      @media (prefers-color-scheme: light) {
+        :root {
+          color-scheme: light;
+          --panel: #f8f4ed;
+          --surface: #efebe2;
+          --surface-hover: #e7e1d7;
+          --line: rgba(26, 25, 22, 0.1);
+          --line-strong: rgba(26, 25, 22, 0.18);
+          --text: #1a1916;
+          --muted: #625e56;
+          --faint: #817c73;
+          --cyan: #2f6670;
+          --lavender: #684f8d;
+          --coral: #a34b39;
+          --green: #2e7d46;
+          --shadow: 0 18px 42px rgba(62, 50, 32, 0.2);
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: transparent;
+      }
+
+      body {
+        padding: 14px;
+        color: var(--text);
+        -webkit-user-select: none;
+        user-select: none;
+      }
+
+      button {
+        font: inherit;
+      }
+
+      button:focus-visible {
+        outline: 2px solid var(--cyan);
+        outline-offset: 2px;
+      }
+
+      .helper {
+        display: grid;
+        grid-template-rows: 48px auto minmax(0, 1fr) 34px;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        border: 1px solid var(--line-strong);
+        border-radius: 14px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+      }
+
+      .toolbar {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+        padding: 0 8px 0 14px;
+        border-bottom: 1px solid var(--line);
+        cursor: grab;
+      }
+
+      .toolbar:active {
+        cursor: grabbing;
+      }
+
+      .identity,
+      .status,
+      .controls {
+        display: flex;
+        align-items: center;
+      }
+
+      .identity {
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .grip {
+        display: grid;
+        grid-template-columns: repeat(2, 3px);
+        grid-template-rows: repeat(3, 3px);
+        gap: 2px;
+        width: 8px;
+        height: 13px;
+        flex: 0 0 auto;
+        opacity: 0.52;
+      }
+
+      .grip i {
+        width: 3px;
+        height: 3px;
+        border-radius: 50%;
+        background: var(--muted);
+      }
+
+      .helper-name {
+        overflow: hidden;
+        font-size: 13px;
+        font-weight: 650;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .privacy {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        color: var(--muted);
+        font-size: 10px;
+        white-space: nowrap;
+      }
+
+      .privacy::before {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--green);
+        content: "";
+      }
+
+      .status {
+        min-width: 0;
+        justify-content: flex-end;
+        gap: 6px;
+        color: var(--muted);
+        font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+        font-size: 10px;
+      }
+
+      .status-dot {
+        width: 6px;
+        height: 6px;
+        flex: 0 0 auto;
+        border-radius: 50%;
+        background: var(--green);
+      }
+
+      [data-state="thinking"] .status-dot,
+      [data-state="arming"] .status-dot {
+        background: var(--cyan);
+      }
+
+      [data-state="paused"] .status-dot {
+        background: var(--faint);
+      }
+
+      [data-state="degraded"] .status-dot {
+        background: var(--coral);
+      }
+
+      .controls {
+        gap: 3px;
+      }
+
+      .icon-button {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border: 0;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+      }
+
+      .icon-button:hover {
+        background: var(--surface);
+        color: var(--text);
+      }
+
+      .icon-button:disabled {
+        cursor: default;
+        opacity: 0.42;
+      }
+
+      .icon-button.stop:hover {
+        color: var(--coral);
+      }
+
+      .icon-button .pause-icon {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 1px;
+      }
+
+      .icon-button .stop-icon {
+        width: 9px;
+        height: 9px;
+        border: 1.5px solid currentColor;
+        border-radius: 2px;
+      }
+
+      .icon-button .close-icon {
+        font-size: 20px;
+        font-weight: 300;
+        line-height: 1;
+      }
+
+      .goal {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 10px;
+        padding: 11px 14px 12px;
+        border-bottom: 1px solid var(--line);
+        background: var(--surface);
+      }
+
+      .goal-label {
+        padding-top: 1px;
+        color: var(--cyan);
+        font-size: 10px;
+        font-weight: 650;
+      }
+
+      .goal-text {
+        margin: 0;
+        overflow: hidden;
+        color: var(--text);
+        font-size: 12px;
+        line-height: 1.4;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .guidance {
+        min-height: 0;
+        overflow-x: hidden;
+        overflow-y: auto;
+        scrollbar-color: var(--line-strong) transparent;
+      }
+
+      .lane {
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr);
+        gap: 10px;
+        padding: 13px 14px 14px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .lane:last-child {
+        border-bottom: 0;
+      }
+
+      .lane-icon {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--cyan);
+        font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .lane.follow-up .lane-icon {
+        color: var(--lavender);
+      }
+
+      .lane.attention .lane-icon {
+        color: var(--coral);
+      }
+
+      .lane-copy {
+        min-width: 0;
+      }
+
+      .lane-heading {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 7px;
+      }
+
+      .lane-heading h2 {
+        margin: 0;
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      .lane-count {
+        color: var(--faint);
+        font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+        font-size: 9px;
+      }
+
+      .lane-list {
+        display: grid;
+        gap: 6px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .lane-list li {
+        position: relative;
+        padding-left: 12px;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.38;
+      }
+
+      .lane-list li::before {
+        position: absolute;
+        top: 0.58em;
+        left: 0;
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: var(--faint);
+        content: "";
+      }
+
+      .lane-list li.current {
+        color: var(--text);
+      }
+
+      .lane-list li.current::before {
+        background: var(--green);
+      }
+
+      .lane-list li.empty {
+        color: var(--faint);
+        font-style: italic;
+      }
+
+      .lane-list li.empty::before {
+        background: transparent;
+        border: 1px solid var(--faint);
+      }
+
+      .footer {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+        padding: 0 14px;
+        border-top: 1px solid var(--line);
+        color: var(--faint);
+        font-size: 10px;
+      }
+
+      .footer::before {
+        width: 5px;
+        height: 5px;
+        flex: 0 0 auto;
+        border-radius: 50%;
+        background: var(--green);
+        content: "";
+      }
+
+      .footer span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      [data-state="degraded"] .footer::before {
+        background: var(--coral);
+      }
+
+      @media (prefers-reduced-motion: no-preference) {
+        .helper {
+          animation: helper-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+        }
+
+        @keyframes helper-enter {
+          from {
+            opacity: 0.75;
+            transform: translateY(5px);
+          }
+
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      }
+
+      @media (forced-colors: active) {
+        .helper,
+        .lane-icon {
+          border-color: CanvasText;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="helper" id="helper" data-state="arming">
+      <header class="toolbar" data-tauri-drag-region>
+        <div class="identity" data-tauri-drag-region>
+          <span class="grip" aria-hidden="true" data-tauri-drag-region>
+            <i></i><i></i><i></i><i></i><i></i><i></i>
+          </span>
+          <span class="helper-name" data-tauri-drag-region>Meeting Helper</span>
+          <span class="privacy" data-tauri-drag-region>Private</span>
+        </div>
+        <div class="status" role="status" aria-live="polite" data-tauri-drag-region>
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="state-label">Arming</span>
+        </div>
+        <div class="controls">
+          <button class="icon-button" id="pause" type="button" title="Pause coaching" aria-label="Pause coaching">
+            <span class="pause-icon" id="pause-icon" aria-hidden="true">Ⅱ</span>
+          </button>
+          <button class="icon-button stop" id="stop" type="button" title="Stop Meeting Helper" aria-label="Stop Meeting Helper">
+            <span class="stop-icon" aria-hidden="true"></span>
+          </button>
+          <button class="icon-button" id="close" type="button" title="Close window; coaching continues" aria-label="Close Meeting Helper window">
+            <span class="close-icon" aria-hidden="true">×</span>
+          </button>
+        </div>
+      </header>
+
+      <section class="goal" aria-label="Meeting goal">
+        <span class="goal-label">Goal</span>
+        <p class="goal-text" id="goal-text">Leave with clear decisions, owners, and next steps.</p>
+      </section>
+
+      <section class="guidance" aria-label="Live meeting guidance" aria-live="polite">
+        <article class="lane cover">
+          <span class="lane-icon" aria-hidden="true">↑</span>
+          <div class="lane-copy">
+            <div class="lane-heading">
+              <h2>Points to cover</h2>
+              <span class="lane-count" id="cover-count"></span>
+            </div>
+            <ul class="lane-list" id="cover-list"></ul>
+          </div>
+        </article>
+
+        <article class="lane follow-up">
+          <span class="lane-icon" aria-hidden="true">?</span>
+          <div class="lane-copy">
+            <div class="lane-heading">
+              <h2>Follow up</h2>
+              <span class="lane-count" id="follow-up-count"></span>
+            </div>
+            <ul class="lane-list" id="follow-up-list"></ul>
+          </div>
+        </article>
+
+        <article class="lane attention">
+          <span class="lane-icon" aria-hidden="true">!</span>
+          <div class="lane-copy">
+            <div class="lane-heading">
+              <h2>Bring to attention</h2>
+              <span class="lane-count" id="attention-count"></span>
+            </div>
+            <ul class="lane-list" id="attention-list"></ul>
+          </div>
+        </article>
+      </section>
+
+      <footer class="footer">
+        <span id="detail">Loading local meeting context.</span>
+      </footer>
+    </main>
+
+    <script>
+      const { invoke } = window.__TAURI__.core;
+      const { listen } = window.__TAURI__.event;
+      const currentWindow = window.__TAURI__.window.getCurrentWindow();
+      const helper = document.getElementById("helper");
+      const stateLabel = document.getElementById("state-label");
+      const goalText = document.getElementById("goal-text");
+      const detail = document.getElementById("detail");
+      const pauseButton = document.getElementById("pause");
+      const pauseIcon = document.getElementById("pause-icon");
+      const stopButton = document.getElementById("stop");
+      const closeButton = document.getElementById("close");
+      let snapshot = null;
+
+      const stateLabels = {
+        off: "Off",
+        arming: "Preparing",
+        listening: "Listening",
+        thinking: "Thinking",
+        nudge: "Guidance ready",
+        paused: "Paused",
+        degraded: "Limited",
+      };
+
+      const lanes = {
+        cover: {
+          list: document.getElementById("cover-list"),
+          count: document.getElementById("cover-count"),
+          empty: "Listening for the next useful point to raise.",
+        },
+        followUp: {
+          list: document.getElementById("follow-up-list"),
+          count: document.getElementById("follow-up-count"),
+          empty: "No open follow-up has surfaced yet.",
+        },
+        attention: {
+          list: document.getElementById("attention-list"),
+          count: document.getElementById("attention-count"),
+          empty: "Nothing needs your attention right now.",
+        },
+      };
+
+      function stateName(value) {
+        const state = String(value || "off").toLowerCase();
+        return Object.hasOwn(stateLabels, state) ? state : "degraded";
+      }
+
+      function renderLane(name, values, currentNudge) {
+        const lane = lanes[name];
+        const items = Array.isArray(values)
+          ? [...new Set(values.map((value) => String(value).trim()).filter(Boolean))].slice(0, 4)
+          : [];
+        lane.list.replaceChildren();
+        lane.count.textContent = items.length ? String(items.length) : "";
+
+        if (!items.length) {
+          const empty = document.createElement("li");
+          empty.className = "empty";
+          empty.textContent = lane.empty;
+          lane.list.appendChild(empty);
+          return;
+        }
+
+        for (const value of items) {
+          const item = document.createElement("li");
+          item.textContent = value;
+          if (currentNudge && value === currentNudge) item.className = "current";
+          lane.list.appendChild(item);
+        }
+      }
+
+      function render(next) {
+        snapshot = next || {};
+        const state = stateName(snapshot.state);
+        const guidance = snapshot.guidance || {};
+        const currentNudge = String(snapshot.nudge?.text || "");
+        const fallbackCover = snapshot.goal ? [snapshot.goal] : [];
+
+        helper.dataset.state = state;
+        stateLabel.textContent = stateLabels[state];
+        goalText.textContent = snapshot.goal || "Leave with clear decisions, owners, and next steps.";
+        goalText.title = goalText.textContent;
+        detail.textContent = snapshot.limitation || snapshot.detail || "Private, local meeting guidance.";
+        detail.title = detail.textContent;
+
+        renderLane("cover", guidance.cover?.length ? guidance.cover : fallbackCover, currentNudge);
+        renderLane("followUp", guidance.followUp, currentNudge);
+        renderLane("attention", guidance.attention, currentNudge);
+
+        const paused = Boolean(snapshot.paused) || state === "paused";
+        pauseButton.disabled = !snapshot.active;
+        pauseButton.setAttribute("aria-label", paused ? "Resume coaching" : "Pause coaching");
+        pauseButton.title = paused ? "Resume coaching" : "Pause coaching";
+        pauseIcon.textContent = paused ? "▶" : "Ⅱ";
+        stopButton.disabled = !snapshot.active;
+      }
+
+      document.addEventListener("mousedown", (event) => {
+        if (event.button !== 0 || event.target.closest("button, a, input, textarea")) return;
+        currentWindow.startDragging();
+      });
+
+      pauseButton.addEventListener("click", async () => {
+        const paused = Boolean(snapshot?.paused) || stateName(snapshot?.state) === "paused";
+        pauseButton.disabled = true;
+        try {
+          render(await invoke(paused ? "cmd_resume_copilot_surface" : "cmd_pause_copilot_surface"));
+        } catch (error) {
+          render({ ...(snapshot || {}), state: "Degraded", limitation: String(error) });
+        }
+      });
+
+      stopButton.addEventListener("click", async () => {
+        stopButton.disabled = true;
+        try {
+          render(await invoke("cmd_stop_copilot_surface"));
+        } catch (error) {
+          render({ ...(snapshot || {}), state: "Degraded", limitation: String(error) });
+        }
+      });
+
+      closeButton.addEventListener("click", () => currentWindow.hide());
+
+      listen("copilot:state", (event) => render(event.payload));
+      listen("copilot:nudge", (event) => {
+        render({ ...(snapshot || {}), state: "Nudge", nudge: event.payload });
+      });
+
+      invoke("cmd_copilot_surface_status")
+        .then(render)
+        .catch((error) => {
+          render({
+            active: false,
+            state: "Degraded",
+            detail: String(error),
+            limitation: String(error),
+          });
+        });
+    </script>
+  </body>
+</html>

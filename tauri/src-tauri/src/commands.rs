@@ -15865,10 +15865,28 @@ fn copilot_presentation_state(
 /// Build the Coach HUD with the same window contract as dictation: destroy a
 /// stale same-label WebView, anchor to the current monitor work area, keep the
 /// transparent undecorated surface above other windows, and never activate it.
-/// Coach HUD window size — single source of truth for the builder and
-/// main.rs `window_base_size`. The compact guidance panel keeps enough room
-/// for three recommendation lanes without becoming a second app window.
-pub(crate) const COPILOT_HUD_SIZE: (f64, f64) = (520.0, 460.0);
+/// The legacy HUD remains a fixed non-activating overlay. Homebase has a
+/// responsive HUD with its own expanded and compact sizes.
+pub(crate) const COPILOT_HUD_SIZE: (f64, f64) = (572.0, 279.0);
+pub(crate) const HOMEBASE_COPILOT_HUD_SIZE: (f64, f64) = (520.0, 460.0);
+pub(crate) const HOMEBASE_COPILOT_HUD_COMPACT_SIZE: (f64, f64) = (340.0, 58.0);
+
+fn uses_homebase_copilot_hud(app: &tauri::AppHandle) -> bool {
+    app.config().identifier.ends_with(".homebase-dev")
+        || app
+            .config()
+            .product_name
+            .as_deref()
+            .is_some_and(|name| name.contains("Homebase"))
+}
+
+pub(crate) fn copilot_hud_size(app: &tauri::AppHandle) -> (f64, f64) {
+    if uses_homebase_copilot_hud(app) {
+        HOMEBASE_COPILOT_HUD_SIZE
+    } else {
+        COPILOT_HUD_SIZE
+    }
+}
 
 fn show_copilot_hud(app: &tauri::AppHandle) -> Result<(), String> {
     use tauri::WebviewUrl;
@@ -15877,7 +15895,8 @@ fn show_copilot_hud(app: &tauri::AppHandle) -> Result<(), String> {
         window.destroy().ok();
     }
 
-    let (width, height) = COPILOT_HUD_SIZE;
+    let homebase_hud = uses_homebase_copilot_hud(app);
+    let (width, height) = copilot_hud_size(app);
     // Sit above the dictation pill if both optional surfaces happen to be
     // active, rather than covering the existing overlay.
     let inset_y = 112.0;
@@ -15910,8 +15929,12 @@ fn show_copilot_hud(app: &tauri::AppHandle) -> Result<(), String> {
     )
     .title("Coach")
     .inner_size(width, height)
+    .min_inner_size(
+        if homebase_hud { 300.0 } else { width },
+        if homebase_hud { 58.0 } else { height },
+    )
     .position(x, y)
-    .resizable(false)
+    .resizable(homebase_hud)
     .decorations(false)
     .transparent(true)
     .shadow(false)
@@ -16410,6 +16433,59 @@ pub fn cmd_show_copilot_surface(
         show_copilot_hud(&app)?;
     }
     Ok(current_copilot_hud(&state.copilot_hud))
+}
+
+#[tauri::command]
+pub fn cmd_set_copilot_hud_compact(
+    app: tauri::AppHandle,
+    compact: bool,
+    restore_width: Option<f64>,
+    restore_height: Option<f64>,
+) -> Result<(), String> {
+    if !uses_homebase_copilot_hud(&app) {
+        return Err("Compact Coach mode is available in Homebase.".into());
+    }
+    let Some(window) = app.get_webview_window("copilot-hud") else {
+        return Err("Coach window is not open.".into());
+    };
+
+    let (width, height) = if compact {
+        HOMEBASE_COPILOT_HUD_COMPACT_SIZE
+    } else {
+        (
+            restore_width
+                .unwrap_or(HOMEBASE_COPILOT_HUD_SIZE.0)
+                .clamp(380.0, 960.0),
+            restore_height
+                .unwrap_or(HOMEBASE_COPILOT_HUD_SIZE.1)
+                .clamp(280.0, 800.0),
+        )
+    };
+    window
+        .set_min_size(Some(tauri::LogicalSize::new(300.0, 58.0)))
+        .map_err(|error| format!("Could not update the Coach minimum size: {error}"))?;
+    window
+        .set_size(tauri::LogicalSize::new(width, height))
+        .map_err(|error| format!("Could not resize the Coach window: {error}"))?;
+    window
+        .set_resizable(!compact)
+        .map_err(|error| format!("Could not update Coach resize behavior: {error}"))
+}
+
+#[tauri::command]
+pub fn cmd_finish_copilot_surface(
+    app: tauri::AppHandle,
+    state: tauri::State<AppState>,
+) -> Result<(), String> {
+    if state.copilot_active.load(Ordering::SeqCst) {
+        state.copilot_stop_flag.store(true, Ordering::SeqCst);
+        if let Err(error) = minutes_core::copilot::request_stop() {
+            tracing::warn!(%error, "could not persist Coach stop request during next-steps handoff");
+        }
+    }
+    crate::show_main_window(&app);
+    app.emit("homebase:open-next-steps", ()).ok();
+    Ok(())
 }
 
 #[tauri::command]

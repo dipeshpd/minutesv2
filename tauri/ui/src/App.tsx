@@ -16,6 +16,7 @@ import {
   getMeetingHelperStatus,
   getMicrophonePermission,
   isDesktopApp,
+  listenForHelperNextSteps,
   loadHomebaseData,
   markActivationNudgeShown,
   markCoachOnboardingSeen,
@@ -1445,6 +1446,21 @@ export default function App() {
     const data = await loadHomebaseData()
     setHomebase(data)
   }, [])
+
+  useEffect(() => {
+    if (!isDesktopShell) return
+    let unlisten: (() => void) | undefined
+    listenForHelperNextSteps(() => {
+      setView('todos')
+      setSelectedMeeting(null)
+      notify('Meeting Helper stopped. Your next steps are ready to review.')
+      refreshHomebase().catch(() => undefined)
+      getMeetingHelperStatus().then(setHelper).catch(() => undefined)
+    }).then((dispose) => {
+      unlisten = dispose
+    })
+    return () => unlisten?.()
+  }, [isDesktopShell, notify, refreshHomebase])
 
   const refreshCapture = useCallback(async () => {
     if (!isDesktopApp()) return emptyRecordingStatus

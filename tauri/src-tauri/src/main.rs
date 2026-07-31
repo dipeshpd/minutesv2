@@ -392,12 +392,12 @@ fn cmd_apply_recall_window_layout(
 /// always derives from this constant, never from the window's current size, so
 /// repeated opens can't compound the dimensions. Keep in sync with each
 /// window's `.inner_size(..)` in its builder.
-fn window_base_size(label: &str) -> Option<(f64, f64)> {
+fn window_base_size(app: &tauri::AppHandle, label: &str) -> Option<(f64, f64)> {
     match label {
         "palette" => Some((640.0, 420.0)),
         "note" => Some((420.0, 260.0)),
         "dictation-overlay" => Some((320.0, 88.0)),
-        "copilot-hud" => Some(commands::COPILOT_HUD_SIZE),
+        "copilot-hud" => Some(commands::copilot_hud_size(app)),
         "meeting-prompt" => Some((380.0, 240.0)),
         _ => None,
     }
@@ -409,7 +409,7 @@ fn cmd_scale_window(app: tauri::AppHandle, label: String, zoom: f64) -> Result<(
     let Some(win) = app.get_webview_window(&label) else {
         return Ok(());
     };
-    let Some((base_w, base_h)) = window_base_size(&label) else {
+    let Some((base_w, base_h)) = window_base_size(&app, &label) else {
         return Ok(());
     };
     let ratio = zoom / BASE;
@@ -2738,6 +2738,8 @@ fn main() {
             commands::cmd_start_copilot_surface,
             commands::cmd_stop_copilot_surface,
             commands::cmd_show_copilot_surface,
+            commands::cmd_set_copilot_hud_compact,
+            commands::cmd_finish_copilot_surface,
             commands::cmd_pause_copilot_surface,
             commands::cmd_resume_copilot_surface,
             commands::cmd_dismiss_copilot_nudge,
@@ -3077,11 +3079,17 @@ mod tray_activity_tests {
             "data-tauri-drag-region",
             "currentWindow.startDragging()",
             "id=\"close\"",
-            "currentWindow.hide()",
+            "currentWindow.close()",
             "Points to cover",
             "Follow up",
             "Bring to attention",
-            "cmd_stop_copilot_surface",
+            "aria-expanded=\"true\"",
+            "cmd_finish_copilot_surface",
+            "cmd_set_copilot_hud_compact",
+            "cmd_capture_status",
+            "@media (max-height: 100px)",
+            "@media (min-width: 760px)",
+            "box-shadow: none",
         ] {
             assert!(
                 hud.contains(contract),

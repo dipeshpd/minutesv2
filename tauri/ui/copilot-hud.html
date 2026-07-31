@@ -23,7 +23,7 @@
         --lavender: #d6c7ff;
         --coral: #ef8a79;
         --green: #68d985;
-        --shadow: 0 18px 42px rgba(0, 0, 0, 0.44);
+        --red: #ff5f57;
       }
 
       @media (prefers-color-scheme: light) {
@@ -41,7 +41,7 @@
           --lavender: #684f8d;
           --coral: #a34b39;
           --green: #2e7d46;
-          --shadow: 0 18px 42px rgba(62, 50, 32, 0.2);
+          --red: #c0392b;
         }
       }
 
@@ -59,7 +59,6 @@
       }
 
       body {
-        padding: 14px;
         color: var(--text);
         -webkit-user-select: none;
         user-select: none;
@@ -71,19 +70,32 @@
 
       button:focus-visible {
         outline: 2px solid var(--cyan);
-        outline-offset: 2px;
+        outline-offset: -2px;
+      }
+
+      .helper,
+      .compact-helper {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        border: 1px solid var(--line-strong);
+        background: var(--panel);
+        box-shadow: none;
       }
 
       .helper {
         display: grid;
         grid-template-rows: 48px auto minmax(0, 1fr) 34px;
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-        border: 1px solid var(--line-strong);
-        border-radius: 14px;
-        background: var(--panel);
-        box-shadow: var(--shadow);
+        border-radius: 12px;
+      }
+
+      .compact-helper {
+        display: none;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 6px;
+        padding: 0 7px 0 13px;
+        border-radius: 999px;
       }
 
       .toolbar {
@@ -97,13 +109,16 @@
         cursor: grab;
       }
 
-      .toolbar:active {
+      .toolbar:active,
+      .compact-helper:active {
         cursor: grabbing;
       }
 
       .identity,
       .status,
-      .controls {
+      .controls,
+      .compact-status,
+      .compact-controls {
         display: flex;
         align-items: center;
       }
@@ -165,7 +180,8 @@
         font-size: 10px;
       }
 
-      .status-dot {
+      .status-dot,
+      .compact-dot {
         width: 6px;
         height: 6px;
         flex: 0 0 auto;
@@ -186,7 +202,8 @@
         background: var(--coral);
       }
 
-      .controls {
+      .controls,
+      .compact-controls {
         gap: 3px;
       }
 
@@ -217,23 +234,65 @@
         color: var(--coral);
       }
 
-      .icon-button .pause-icon {
+      .pause-icon {
         font-size: 12px;
         font-weight: 700;
         letter-spacing: 1px;
       }
 
-      .icon-button .stop-icon {
+      .stop-icon {
         width: 9px;
         height: 9px;
         border: 1.5px solid currentColor;
         border-radius: 2px;
       }
 
-      .icon-button .close-icon {
+      .close-icon {
         font-size: 20px;
         font-weight: 300;
         line-height: 1;
+      }
+
+      .collapse-icon,
+      .expand-icon {
+        position: relative;
+        width: 12px;
+        height: 12px;
+      }
+
+      .collapse-icon::before,
+      .collapse-icon::after,
+      .expand-icon::before,
+      .expand-icon::after {
+        position: absolute;
+        width: 6px;
+        height: 1px;
+        background: currentColor;
+        content: "";
+      }
+
+      .collapse-icon::before {
+        top: 3px;
+        left: 1px;
+        transform: rotate(45deg);
+      }
+
+      .collapse-icon::after {
+        right: 1px;
+        bottom: 3px;
+        transform: rotate(45deg);
+      }
+
+      .expand-icon::before {
+        top: 2px;
+        right: 1px;
+        transform: rotate(45deg);
+      }
+
+      .expand-icon::after {
+        bottom: 2px;
+        left: 1px;
+        transform: rotate(45deg);
       }
 
       .goal {
@@ -270,15 +329,29 @@
       }
 
       .lane {
-        display: grid;
-        grid-template-columns: 28px minmax(0, 1fr);
-        gap: 10px;
-        padding: 13px 14px 14px;
         border-bottom: 1px solid var(--line);
       }
 
       .lane:last-child {
         border-bottom: 0;
+      }
+
+      .lane-toggle {
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        padding: 12px 14px 7px;
+        border: 0;
+        background: transparent;
+        color: var(--text);
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .lane-toggle:hover {
+        background: color-mix(in srgb, var(--surface) 52%, transparent);
       }
 
       .lane-icon {
@@ -302,28 +375,47 @@
         color: var(--coral);
       }
 
-      .lane-copy {
-        min-width: 0;
-      }
-
       .lane-heading {
         display: flex;
         align-items: baseline;
         justify-content: space-between;
         gap: 12px;
-        margin-bottom: 7px;
+        min-width: 0;
       }
 
       .lane-heading h2 {
         margin: 0;
+        overflow: hidden;
         font-size: 12px;
         font-weight: 650;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .lane-count {
         color: var(--faint);
         font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
         font-size: 9px;
+      }
+
+      .lane-chevron {
+        width: 7px;
+        height: 7px;
+        border-right: 1.5px solid var(--faint);
+        border-bottom: 1.5px solid var(--faint);
+        transform: rotate(45deg) translateY(-2px);
+      }
+
+      .lane.collapsed .lane-chevron {
+        transform: rotate(-45deg) translate(-1px, -1px);
+      }
+
+      .lane-body {
+        padding: 0 14px 13px 52px;
+      }
+
+      .lane.collapsed .lane-body {
+        display: none;
       }
 
       .lane-list {
@@ -401,26 +493,160 @@
         background: var(--coral);
       }
 
-      @media (prefers-reduced-motion: no-preference) {
-        .helper {
-          animation: helper-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+      .compact-status {
+        min-width: 0;
+        gap: 8px;
+        cursor: grab;
+      }
+
+      .compact-copy {
+        display: flex;
+        min-width: 0;
+        align-items: baseline;
+        gap: 7px;
+      }
+
+      .compact-label {
+        overflow: hidden;
+        font-size: 12px;
+        font-weight: 650;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .compact-meta {
+        color: var(--muted);
+        font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+        font-size: 10px;
+        white-space: nowrap;
+      }
+
+      .compact-helper[data-recording="true"] .compact-dot {
+        background: var(--red);
+      }
+
+      @media (max-width: 420px) {
+        .toolbar {
+          gap: 5px;
+          padding-left: 10px;
         }
 
-        @keyframes helper-enter {
-          from {
-            opacity: 0.75;
-            transform: translateY(5px);
+        .privacy,
+        .status span:last-child,
+        .goal-label {
+          display: none;
+        }
+
+        .goal {
+          grid-template-columns: minmax(0, 1fr);
+        }
+
+        .lane-toggle {
+          padding-right: 10px;
+          padding-left: 10px;
+        }
+
+        .lane-body {
+          padding-right: 10px;
+          padding-left: 48px;
+        }
+      }
+
+      @media (max-height: 360px) {
+        .helper {
+          grid-template-rows: 44px auto minmax(0, 1fr);
+        }
+
+        .footer {
+          display: none;
+        }
+
+        .goal {
+          padding-top: 8px;
+          padding-bottom: 8px;
+        }
+
+        .lane-toggle {
+          padding-top: 8px;
+          padding-bottom: 6px;
+        }
+
+        .lane-body {
+          padding-bottom: 9px;
+        }
+
+        .lane-list li:nth-child(n + 3) {
+          display: none;
+        }
+      }
+
+      @media (max-height: 280px) {
+        .goal {
+          display: none;
+        }
+
+        .lane-list li:nth-child(n + 2) {
+          display: none;
+        }
+      }
+
+      @media (min-width: 760px) and (min-height: 340px) {
+        .guidance {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          overflow: hidden;
+        }
+
+        .lane {
+          min-width: 0;
+          overflow-y: auto;
+          border-right: 1px solid var(--line);
+          border-bottom: 0;
+        }
+
+        .lane:last-child {
+          border-right: 0;
+        }
+
+        .lane-toggle {
+          grid-template-columns: 28px minmax(0, 1fr) auto;
+        }
+
+        .lane-body {
+          padding-left: 14px;
+        }
+      }
+
+      @media (max-height: 100px) {
+        .helper {
+          display: none;
+        }
+
+        .compact-helper {
+          display: grid;
+        }
+      }
+
+      @media (prefers-reduced-motion: no-preference) {
+        .compact-helper[data-recording="true"] .compact-dot {
+          animation: recording-pulse 1.2s ease-in-out infinite;
+        }
+
+        @keyframes recording-pulse {
+          0%,
+          100% {
+            opacity: 1;
           }
 
-          to {
-            opacity: 1;
-            transform: translateY(0);
+          50% {
+            opacity: 0.45;
           }
         }
       }
 
       @media (forced-colors: active) {
         .helper,
+        .compact-helper,
         .lane-icon {
           border-color: CanvasText;
         }
@@ -439,13 +665,16 @@
         </div>
         <div class="status" role="status" aria-live="polite" data-tauri-drag-region>
           <span class="status-dot" aria-hidden="true"></span>
-          <span id="state-label">Arming</span>
+          <span id="state-label">Preparing</span>
         </div>
         <div class="controls">
+          <button class="icon-button" id="collapse" type="button" title="Collapse to recording pill" aria-label="Collapse Meeting Helper">
+            <span class="collapse-icon" aria-hidden="true"></span>
+          </button>
           <button class="icon-button" id="pause" type="button" title="Pause coaching" aria-label="Pause coaching">
             <span class="pause-icon" id="pause-icon" aria-hidden="true">Ⅱ</span>
           </button>
-          <button class="icon-button stop" id="stop" type="button" title="Stop Meeting Helper" aria-label="Stop Meeting Helper">
+          <button class="icon-button stop" id="stop" type="button" title="Stop helper and review next steps" aria-label="Stop Meeting Helper and review next steps">
             <span class="stop-icon" aria-hidden="true"></span>
           </button>
           <button class="icon-button" id="close" type="button" title="Close window; coaching continues" aria-label="Close Meeting Helper window">
@@ -460,35 +689,44 @@
       </section>
 
       <section class="guidance" aria-label="Live meeting guidance" aria-live="polite">
-        <article class="lane cover">
-          <span class="lane-icon" aria-hidden="true">↑</span>
-          <div class="lane-copy">
-            <div class="lane-heading">
+        <article class="lane cover" data-lane="cover">
+          <button class="lane-toggle" type="button" aria-expanded="true" aria-controls="cover-body">
+            <span class="lane-icon" aria-hidden="true">↑</span>
+            <span class="lane-heading">
               <h2>Points to cover</h2>
               <span class="lane-count" id="cover-count"></span>
-            </div>
+            </span>
+            <span class="lane-chevron" aria-hidden="true"></span>
+          </button>
+          <div class="lane-body" id="cover-body">
             <ul class="lane-list" id="cover-list"></ul>
           </div>
         </article>
 
-        <article class="lane follow-up">
-          <span class="lane-icon" aria-hidden="true">?</span>
-          <div class="lane-copy">
-            <div class="lane-heading">
+        <article class="lane follow-up" data-lane="followUp">
+          <button class="lane-toggle" type="button" aria-expanded="true" aria-controls="follow-up-body">
+            <span class="lane-icon" aria-hidden="true">?</span>
+            <span class="lane-heading">
               <h2>Follow up</h2>
               <span class="lane-count" id="follow-up-count"></span>
-            </div>
+            </span>
+            <span class="lane-chevron" aria-hidden="true"></span>
+          </button>
+          <div class="lane-body" id="follow-up-body">
             <ul class="lane-list" id="follow-up-list"></ul>
           </div>
         </article>
 
-        <article class="lane attention">
-          <span class="lane-icon" aria-hidden="true">!</span>
-          <div class="lane-copy">
-            <div class="lane-heading">
+        <article class="lane attention" data-lane="attention">
+          <button class="lane-toggle" type="button" aria-expanded="true" aria-controls="attention-body">
+            <span class="lane-icon" aria-hidden="true">!</span>
+            <span class="lane-heading">
               <h2>Bring to attention</h2>
               <span class="lane-count" id="attention-count"></span>
-            </div>
+            </span>
+            <span class="lane-chevron" aria-hidden="true"></span>
+          </button>
+          <div class="lane-body" id="attention-body">
             <ul class="lane-list" id="attention-list"></ul>
           </div>
         </article>
@@ -499,11 +737,30 @@
       </footer>
     </main>
 
+    <aside class="compact-helper" id="compact-helper" data-recording="false" data-tauri-drag-region aria-label="Compact Meeting Helper">
+      <div class="compact-status" data-tauri-drag-region>
+        <span class="compact-dot" aria-hidden="true"></span>
+        <span class="compact-copy" data-tauri-drag-region>
+          <span class="compact-label" id="compact-label">Coach active</span>
+          <span class="compact-meta" id="compact-meta">Listening</span>
+        </span>
+      </div>
+      <div class="compact-controls">
+        <button class="icon-button" id="expand" type="button" title="Expand Meeting Helper" aria-label="Expand Meeting Helper">
+          <span class="expand-icon" aria-hidden="true"></span>
+        </button>
+        <button class="icon-button" id="compact-close" type="button" title="Close window; coaching continues" aria-label="Close Meeting Helper window">
+          <span class="close-icon" aria-hidden="true">×</span>
+        </button>
+      </div>
+    </aside>
+
     <script>
       const { invoke } = window.__TAURI__.core;
       const { listen } = window.__TAURI__.event;
       const currentWindow = window.__TAURI__.window.getCurrentWindow();
       const helper = document.getElementById("helper");
+      const compactHelper = document.getElementById("compact-helper");
       const stateLabel = document.getElementById("state-label");
       const goalText = document.getElementById("goal-text");
       const detail = document.getElementById("detail");
@@ -511,7 +768,16 @@
       const pauseIcon = document.getElementById("pause-icon");
       const stopButton = document.getElementById("stop");
       const closeButton = document.getElementById("close");
+      const compactCloseButton = document.getElementById("compact-close");
+      const collapseButton = document.getElementById("collapse");
+      const expandButton = document.getElementById("expand");
+      const compactLabel = document.getElementById("compact-label");
+      const compactMeta = document.getElementById("compact-meta");
+      const expandedSizeKey = "minutes.homebase.coachExpandedSize";
+      const collapsedLanesKey = "minutes.homebase.coachCollapsedLanes";
       let snapshot = null;
+      let capture = null;
+      let resizeTimer = null;
 
       const stateLabels = {
         off: "Off",
@@ -570,6 +836,25 @@
         }
       }
 
+      function renderCompact() {
+        const recording = Boolean(capture?.recording || capture?.starting);
+        const processing = Boolean(capture?.processing);
+        const state = stateName(snapshot?.state);
+        compactHelper.dataset.recording = String(recording);
+        compactLabel.textContent = recording
+          ? "Recording"
+          : processing
+            ? "Processing meeting"
+            : snapshot?.active
+              ? "Coach active"
+              : "Meeting Helper";
+        compactMeta.textContent = recording
+          ? capture?.elapsed || "Live"
+          : processing
+            ? capture?.processingStageLabel || "Working"
+            : stateLabels[state];
+      }
+
       function render(next) {
         snapshot = next || {};
         const state = stateName(snapshot.state);
@@ -594,11 +879,81 @@
         pauseButton.title = paused ? "Resume coaching" : "Pause coaching";
         pauseIcon.textContent = paused ? "▶" : "Ⅱ";
         stopButton.disabled = !snapshot.active;
+        renderCompact();
+      }
+
+      function loadExpandedSize() {
+        try {
+          const stored = JSON.parse(localStorage.getItem(expandedSizeKey) || "null");
+          if (Number.isFinite(stored?.width) && Number.isFinite(stored?.height)) return stored;
+        } catch (_error) {
+          return null;
+        }
+        return null;
+      }
+
+      function rememberExpandedSize() {
+        if (window.innerHeight <= 120 || window.innerWidth < 380) return;
+        localStorage.setItem(
+          expandedSizeKey,
+          JSON.stringify({ width: window.innerWidth, height: window.innerHeight }),
+        );
+      }
+
+      async function setCompact(compact) {
+        if (compact) rememberExpandedSize();
+        const stored = loadExpandedSize();
+        await invoke("cmd_set_copilot_hud_compact", {
+          compact,
+          restoreWidth: stored?.width ?? null,
+          restoreHeight: stored?.height ?? null,
+        });
+      }
+
+      function loadCollapsedLanes() {
+        try {
+          const lanes = JSON.parse(localStorage.getItem(collapsedLanesKey) || "[]");
+          return new Set(Array.isArray(lanes) ? lanes : []);
+        } catch (_error) {
+          return new Set();
+        }
+      }
+
+      const collapsedLanes = loadCollapsedLanes();
+      for (const laneElement of document.querySelectorAll(".lane")) {
+        const name = laneElement.dataset.lane;
+        const toggle = laneElement.querySelector(".lane-toggle");
+        const setCollapsed = (collapsed) => {
+          laneElement.classList.toggle("collapsed", collapsed);
+          toggle.setAttribute("aria-expanded", String(!collapsed));
+          if (collapsed) collapsedLanes.add(name);
+          else collapsedLanes.delete(name);
+          localStorage.setItem(collapsedLanesKey, JSON.stringify([...collapsedLanes]));
+        };
+        setCollapsed(collapsedLanes.has(name));
+        toggle.addEventListener("click", () => setCollapsed(!laneElement.classList.contains("collapsed")));
       }
 
       document.addEventListener("mousedown", (event) => {
         if (event.button !== 0 || event.target.closest("button, a, input, textarea")) return;
         currentWindow.startDragging();
+      });
+
+      window.addEventListener("resize", () => {
+        window.clearTimeout(resizeTimer);
+        resizeTimer = window.setTimeout(rememberExpandedSize, 180);
+      });
+
+      collapseButton.addEventListener("click", () => {
+        setCompact(true).catch((error) => {
+          render({ ...(snapshot || {}), state: "Degraded", limitation: String(error) });
+        });
+      });
+
+      expandButton.addEventListener("click", () => {
+        setCompact(false).catch((error) => {
+          render({ ...(snapshot || {}), state: "Degraded", limitation: String(error) });
+        });
       });
 
       pauseButton.addEventListener("click", async () => {
@@ -614,18 +969,31 @@
       stopButton.addEventListener("click", async () => {
         stopButton.disabled = true;
         try {
-          render(await invoke("cmd_stop_copilot_surface"));
+          await invoke("cmd_finish_copilot_surface");
+          await currentWindow.close();
         } catch (error) {
+          stopButton.disabled = false;
           render({ ...(snapshot || {}), state: "Degraded", limitation: String(error) });
         }
       });
 
-      closeButton.addEventListener("click", () => currentWindow.hide());
+      const closeWindow = () => currentWindow.close();
+      closeButton.addEventListener("click", closeWindow);
+      compactCloseButton.addEventListener("click", closeWindow);
 
       listen("copilot:state", (event) => render(event.payload));
       listen("copilot:nudge", (event) => {
         render({ ...(snapshot || {}), state: "Nudge", nudge: event.payload });
       });
+
+      async function refreshCapture() {
+        try {
+          capture = await invoke("cmd_capture_status");
+          renderCompact();
+        } catch (_error) {
+          capture = null;
+        }
+      }
 
       invoke("cmd_copilot_surface_status")
         .then(render)
@@ -637,6 +1005,8 @@
             limitation: String(error),
           });
         });
+      refreshCapture();
+      window.setInterval(refreshCapture, 1000);
     </script>
   </body>
 </html>

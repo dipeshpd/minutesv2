@@ -8,12 +8,20 @@ import {
 } from './data'
 
 type Invoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>
+type Unlisten = () => void
+type Listen = (
+  event: string,
+  handler: (event: { payload: unknown }) => void,
+) => Promise<Unlisten>
 
 declare global {
   interface Window {
     __TAURI__?: {
       core?: {
         invoke?: Invoke
+      }
+      event?: {
+        listen?: Listen
       }
     }
   }
@@ -465,6 +473,12 @@ export async function stopMeetingHelper() {
 export async function showMeetingHelper() {
   const invoke = requireDesktopInvoke()
   return invoke<CopilotStatus>('cmd_show_copilot_surface')
+}
+
+export async function listenForHelperNextSteps(onOpen: () => void): Promise<Unlisten> {
+  const listen = window.__TAURI__?.event?.listen
+  if (!listen) return () => undefined
+  return listen('homebase:open-next-steps', () => onOpen())
 }
 
 export async function pauseMeetingHelper() {

@@ -253,6 +253,7 @@ impl CopilotHudSnapshot {
 
 pub(crate) struct RecallChatTurn {
     id: u64,
+    target_window: String,
     cancelled: Arc<AtomicBool>,
     child: Option<Child>,
 }
@@ -9108,6 +9109,21 @@ If you're unsure whether something is allowed, assume it isn't. If a tool call f
 missing what's needed, say so briefly and suggest the user open or select the relevant meeting — don't \
 narrate or retry failed tool calls.
 ";
+const RECALL_CHAT_ANTHROPIC_MODEL: &str = "claude-sonnet-4-20250514";
+
+fn recall_chat_anthropic_text_delta(event: &serde_json::Value) -> Option<&str> {
+    (event.get("type").and_then(|value| value.as_str()) == Some("content_block_delta"))
+        .then(|| {
+            event
+                .get("delta")
+                .filter(|delta| {
+                    delta.get("type").and_then(|value| value.as_str()) == Some("text_delta")
+                })
+                .and_then(|delta| delta.get("text"))
+                .and_then(|text| text.as_str())
+        })
+        .flatten()
+}
 
 /// Build a prompt string combining conversation history (last 6 turns) and
 /// the current enriched user message.
@@ -9178,7 +9194,10 @@ struct RecallChatProcessIo {
     stderr: ChildStderr,
 }
 
-fn begin_recall_chat_turn(state: &AppState) -> Result<(u64, Arc<AtomicBool>), String> {
+fn begin_recall_chat_turn(
+    state: &AppState,
+    target_window: String,
+) -> Result<(u64, Arc<AtomicBool>), String> {
     let mut current = state.recall_chat_turn.lock().unwrap();
     if current.is_some() {
         return Err("A Recall chat turn is already in progress.".into());
@@ -9190,6 +9209,7 @@ fn begin_recall_chat_turn(state: &AppState) -> Result<(u64, Arc<AtomicBool>), St
     let cancelled = Arc::new(AtomicBool::new(false));
     *current = Some(RecallChatTurn {
         id,
+        target_window,
         cancelled: cancelled.clone(),
         child: None,
     });
@@ -9214,8 +9234,16 @@ fn finish_recall_chat_turn(
     current_turn: &Arc<Mutex<Option<RecallChatTurn>>>,
     turn_id: u64,
 ) {
-    if clear_recall_chat_turn_if_current(current_turn, turn_id) {
-        app.emit_to("main", "recall-chat-done", ()).ok();
+    let target_window = {
+        let mut current = current_turn.lock().unwrap();
+        if current.as_ref().is_some_and(|turn| turn.id == turn_id) {
+            current.take().map(|turn| turn.target_window)
+        } else {
+            None
+        }
+    };
+    if let Some(target_window) = target_window {
+        app.emit_to(target_window, "recall-chat-done", ()).ok();
     }
 }
 
@@ -9345,17 +9373,15 @@ fn reap_recall_chat_child(current_turn: &Arc<Mutex<Option<RecallChatTurn>>>, tur
     }
 }
 
-/// Cancel the current turn and return whether the caller owns its one-and-only
+/// Cancel the current turn and return the window that owns its one-and-only
 /// `recall-chat-done` emission. A worker that won the teardown race emits it
 /// instead, so an old turn can never tear down a newer one.
-fn cancel_recall_chat_turn(current_turn: &Arc<Mutex<Option<RecallChatTurn>>>) -> bool {
-    let (turn_id, child) = {
+fn cancel_recall_chat_turn(current_turn: &Arc<Mutex<Option<RecallChatTurn>>>) -> Option<String> {
+    let (turn_id, target_window, child) = {
         let mut current = current_turn.lock().unwrap();
-        let Some(turn) = current.as_mut() else {
-            return false;
-        };
+        let turn = current.as_mut()?;
         turn.cancelled.store(true, Ordering::Relaxed);
-        (turn.id, turn.child.take())
+        (turn.id, turn.target_window.clone(), turn.child.take())
     };
 
     if let Some(mut child) = child {
@@ -9364,22 +9390,22 @@ fn cancel_recall_chat_turn(current_turn: &Arc<Mutex<Option<RecallChatTurn>>>) ->
         }
     }
 
-    clear_recall_chat_turn_if_current(current_turn, turn_id)
+    clear_recall_chat_turn_if_current(current_turn, turn_id).then_some(target_window)
 }
 
 /// Send a message from the native Recall chat panel and stream the response.
 ///
 /// Provider priority:
-///   1. `config.summarization.engine == "ollama"` — HTTP to Ollama (localhost:11434)
-///   2. `detect_agent_cli()` found something — use that CLI:
+///   1. `ANTHROPIC_API_KEY` is configured — direct streaming Messages API.
+///      The desktop Settings flow stores this explicit cloud opt-in in Keychain.
+///   2. `config.summarization.engine == "ollama"` — HTTP to Ollama (localhost:11434)
+///   3. `detect_agent_cli()` found something — use that CLI:
 ///      - `claude`: stream-json via `build_chat_invocation` — scoped to a
 ///        read-only `--allowedTools` allow-list on the Minutes MCP server
 ///        only (no shell, no writes, prompt on stdin), streamed token-by-token
 ///      - others (codex/gemini/opencode): captured as plain-text stdout
-///   3. Nothing found — descriptive error returned to frontend, pointing the
-///      user at installing Claude Code. Minutes intentionally has no direct
-///      cloud-API fallback for chat: no-API-key-required is core to the
-///      product, so an installed agent CLI (or Ollama) is the only path.
+///   4. Nothing found — descriptive error returned to the frontend, pointing
+///      the user at configuring a provider or installing an agent CLI.
 ///
 /// Before invoking the AI, context is injected in two layers (capped at
 /// 12 000 chars total): (1) the full content of the meeting currently
@@ -9394,11 +9420,13 @@ fn cancel_recall_chat_turn(current_turn: &Arc<Mutex<Option<RecallChatTurn>>>) ->
 #[tauri::command]
 pub async fn cmd_recall_chat_send(
     app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
     state: tauri::State<'_, AppState>,
     message: String,
 ) -> Result<(), String> {
     use std::io::{BufRead, BufReader};
 
+    let target_window = window.label().to_string();
     let workspace = crate::context::workspace_dir();
     if !workspace.exists() {
         std::fs::create_dir_all(&workspace)
@@ -9524,14 +9552,132 @@ pub async fn cmd_recall_chat_send(
     let full_prompt = build_recall_chat_prompt(&history_snapshot, &enriched_message);
 
     // ── Step 3: detect provider ────────────────────────────────────────────────
+    // A key saved explicitly in Settings is an explicit cloud opt-in and takes
+    // precedence. Without one, Recall chat keeps its existing local Ollama /
+    // installed-agent behavior.
+    let anthropic_api_key = std::env::var(crate::secret_store::ANTHROPIC_API_KEY_ENV).ok();
     let use_ollama = config.summarization.engine == "ollama";
+
+    // ── Anthropic Messages API path ────────────────────────────────────────────
+    if let Some(api_key) = anthropic_api_key {
+        let (turn_id, cancelled) = begin_recall_chat_turn(&state, target_window.clone())?;
+        let app_clone = app.clone();
+        let event_target = target_window.clone();
+        let message_clone = message.clone();
+        let history_arc = state.recall_chat_history.clone();
+        let current_turn = state.recall_chat_turn.clone();
+
+        let task_result = tauri::async_runtime::spawn_blocking(move || {
+            let body = serde_json::json!({
+                "model": RECALL_CHAT_ANTHROPIC_MODEL,
+                "max_tokens": 1200,
+                "stream": true,
+                "system": "You are the Minutes meeting assistant. Give concise, practical answers grounded in the supplied meeting context. Clearly distinguish recorded facts from suggestions.",
+                "messages": [{
+                    "role": "user",
+                    "content": full_prompt,
+                }],
+            });
+            let agent = ureq::Agent::new_with_config(
+                ureq::config::Config::builder()
+                    .timeout_global(Some(std::time::Duration::from_secs(120)))
+                    .http_status_as_error(false)
+                    .build(),
+            );
+            let mut response = match agent
+                .post("https://api.anthropic.com/v1/messages")
+                .header("Content-Type", "application/json")
+                .header("x-api-key", &api_key)
+                .header("anthropic-version", "2023-06-01")
+                .send_json(&body)
+            {
+                Ok(response) => response,
+                Err(error) => {
+                    if !cancelled.load(Ordering::Relaxed) {
+                        app_clone
+                            .emit_to(
+                                &event_target,
+                                "recall-chat-error",
+                                format!("Claude connection error: {error}"),
+                            )
+                            .ok();
+                    }
+                    finish_recall_chat_turn(&app_clone, &current_turn, turn_id);
+                    return;
+                }
+            };
+
+            if response.status().as_u16() >= 400 {
+                let status = response.status().as_u16();
+                let body_text = response.body_mut().read_to_string().unwrap_or_default();
+                let safe_detail: String = body_text.chars().take(1000).collect();
+                if !cancelled.load(Ordering::Relaxed) {
+                    app_clone
+                        .emit_to(
+                            &event_target,
+                            "recall-chat-error",
+                            format!("Claude API returned HTTP {status}: {safe_detail}"),
+                        )
+                        .ok();
+                }
+                finish_recall_chat_turn(&app_clone, &current_turn, turn_id);
+                return;
+            }
+
+            let mut response_body = response.into_body();
+            let reader = BufReader::new(response_body.as_reader());
+            let mut full_response = String::new();
+            for line_result in reader.lines() {
+                if cancelled.load(Ordering::Relaxed) {
+                    break;
+                }
+                let Ok(line) = line_result else {
+                    break;
+                };
+                let Some(data) = line.strip_prefix("data: ") else {
+                    continue;
+                };
+                let Ok(event) = serde_json::from_str::<serde_json::Value>(data) else {
+                    continue;
+                };
+                if let Some(text) = recall_chat_anthropic_text_delta(&event) {
+                    full_response.push_str(text);
+                }
+                app_clone
+                    .emit_to(
+                        &event_target,
+                        "recall-chat-chunk",
+                        serde_json::json!({
+                            "type": "stream_event",
+                            "event": event,
+                        }),
+                    )
+                    .ok();
+            }
+
+            if !cancelled.load(Ordering::Relaxed) && !full_response.is_empty() {
+                let mut history = history_arc.lock().unwrap();
+                history.push((message_clone, full_response));
+            }
+            finish_recall_chat_turn(&app_clone, &current_turn, turn_id);
+        })
+        .await;
+
+        if let Err(error) = task_result {
+            clear_recall_chat_turn_if_current(&state.recall_chat_turn, turn_id);
+            return Err(format!("Recall chat Claude task failed: {error}"));
+        }
+
+        return Ok(());
+    }
 
     // ── Ollama path ────────────────────────────────────────────────────────────
     if use_ollama {
-        let (turn_id, cancelled) = begin_recall_chat_turn(&state)?;
+        let (turn_id, cancelled) = begin_recall_chat_turn(&state, target_window.clone())?;
         let ollama_url = config.summarization.ollama_url.clone();
         let ollama_model = config.summarization.ollama_model.clone();
         let app_clone = app.clone();
+        let event_target = target_window.clone();
         let message_clone = message.clone();
         let history_arc = state.recall_chat_history.clone();
         let current_turn = state.recall_chat_turn.clone();
@@ -9568,7 +9714,11 @@ pub async fn cmd_recall_chat_send(
                 Err(e) => {
                     if !cancelled.load(Ordering::Relaxed) {
                         app_clone
-                            .emit_to("main", "recall-chat-error", format!("Ollama error: {}", e))
+                            .emit_to(
+                                &event_target,
+                                "recall-chat-error",
+                                format!("Ollama error: {}", e),
+                            )
                             .ok();
                     }
                     finish_recall_chat_turn(&app_clone, &current_turn, turn_id);
@@ -9582,7 +9732,7 @@ pub async fn cmd_recall_chat_send(
                 if !cancelled.load(Ordering::Relaxed) {
                     app_clone
                         .emit_to(
-                            "main",
+                            &event_target,
                             "recall-chat-error",
                             format!("Ollama HTTP {}: {}", status, body_text),
                         )
@@ -9613,7 +9763,7 @@ pub async fn cmd_recall_chat_send(
                                 full_response.push_str(text);
                                 app_clone
                                     .emit_to(
-                                        "main",
+                                        &event_target,
                                         "recall-chat-chunk",
                                         serde_json::json!({"type": "text", "text": text}),
                                     )
@@ -9647,10 +9797,10 @@ pub async fn cmd_recall_chat_send(
 
     // ── CLI agent path ─────────────────────────────────────────────────────────
     let agent_bin = minutes_core::summarize::detect_agent_cli().ok_or_else(|| {
-        "No AI agent found for Recall chat. Install Claude Code (npm install -g \
-         @anthropic-ai/claude-code), Codex, or Gemini CLI to enable chat — or configure \
-         Ollama ([summarization] engine = \"ollama\" in config.toml) for a fully local \
-         option. Minutes doesn't require an API key for this feature."
+        "No AI provider found for meeting chat. Add an Anthropic API key in the \
+         Helper settings, install Claude Code, Codex, or Gemini CLI, or configure \
+         Ollama ([summarization] engine = \"ollama\" in config.toml) for a fully \
+         local option."
             .to_string()
     })?;
 
@@ -9713,7 +9863,7 @@ pub async fn cmd_recall_chat_send(
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        let (turn_id, cancelled) = begin_recall_chat_turn(&state)?;
+        let (turn_id, cancelled) = begin_recall_chat_turn(&state, target_window.clone())?;
         let process =
             match spawn_tracked_recall_chat_child(command, &state.recall_chat_turn, turn_id) {
                 Ok(process) => process,
@@ -9735,6 +9885,8 @@ pub async fn cmd_recall_chat_send(
         }
 
         let app_stderr = app.clone();
+        let stderr_target = target_window.clone();
+        let event_target = target_window.clone();
         let stderr_cancelled = cancelled.clone();
         let current_turn = state.recall_chat_turn.clone();
         let worker_turn = current_turn.clone();
@@ -9753,7 +9905,7 @@ pub async fn cmd_recall_chat_send(
                 }
                 if !stderr_cancelled.load(Ordering::Relaxed) && !buf.is_empty() {
                     app_stderr
-                        .emit_to("main", "recall-chat-error", buf.trim().to_string())
+                        .emit_to(&stderr_target, "recall-chat-error", buf.trim().to_string())
                         .ok();
                 }
             });
@@ -9783,7 +9935,7 @@ pub async fn cmd_recall_chat_send(
                                 }
                             }
                             if !cancelled.load(Ordering::Relaxed) {
-                                app.emit_to("main", "recall-chat-chunk", json).ok();
+                                app.emit_to(&event_target, "recall-chat-chunk", json).ok();
                             }
                         }
                     }
@@ -9858,7 +10010,7 @@ pub async fn cmd_recall_chat_send(
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        let (turn_id, cancelled) = begin_recall_chat_turn(&state)?;
+        let (turn_id, cancelled) = begin_recall_chat_turn(&state, target_window.clone())?;
         let process =
             match spawn_tracked_recall_chat_child(command, &state.recall_chat_turn, turn_id) {
                 Ok(process) => process,
@@ -9881,6 +10033,8 @@ pub async fn cmd_recall_chat_send(
 
         let cleanup_path = invocation.cleanup_path;
         let app_clone = app.clone();
+        let stderr_target = target_window.clone();
+        let event_target = target_window.clone();
         let stderr_cancelled = cancelled.clone();
         let current_turn = state.recall_chat_turn.clone();
         let worker_turn = current_turn.clone();
@@ -9901,7 +10055,7 @@ pub async fn cmd_recall_chat_send(
                 }
                 if !stderr_cancelled.load(Ordering::Relaxed) && !buf.is_empty() {
                     app_stderr2
-                        .emit_to("main", "recall-chat-error", buf.trim().to_string())
+                        .emit_to(&stderr_target, "recall-chat-error", buf.trim().to_string())
                         .ok();
                 }
             });
@@ -9921,7 +10075,7 @@ pub async fn cmd_recall_chat_send(
             if !cancelled.load(Ordering::Relaxed) && !trimmed.is_empty() {
                 app_clone
                     .emit_to(
-                        "main",
+                        &event_target,
                         "recall-chat-chunk",
                         serde_json::json!({"type": "text", "text": &trimmed}),
                     )
@@ -9951,8 +10105,8 @@ pub fn cmd_recall_chat_cancel(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    if cancel_recall_chat_turn(&state.recall_chat_turn) {
-        app.emit_to("main", "recall-chat-done", ()).ok();
+    if let Some(target_window) = cancel_recall_chat_turn(&state.recall_chat_turn) {
+        app.emit_to(target_window, "recall-chat-done", ()).ok();
     }
     Ok(())
 }
@@ -10755,6 +10909,33 @@ pub fn cmd_clear_openai_compatible_api_key() -> Result<serde_json::Value, String
         serde_json::to_value(crate::secret_store::openai_compatible_secret_status())
             .unwrap_or_else(|_| serde_json::json!({ "keySet": false })),
     )
+}
+
+#[tauri::command]
+pub fn cmd_anthropic_secret_status() -> serde_json::Value {
+    serde_json::to_value(crate::secret_store::hydrate_anthropic_api_key_env())
+        .unwrap_or_else(|_| serde_json::json!({ "keySet": false }))
+}
+
+#[tauri::command]
+pub fn cmd_set_anthropic_api_key(api_key: String) -> Result<serde_json::Value, String> {
+    let api_key = api_key.trim().to_string();
+    if api_key.is_empty() {
+        return Err("Paste an API key first.".into());
+    }
+
+    crate::secret_store::save_anthropic_api_key(&api_key)?;
+    std::env::set_var(crate::secret_store::ANTHROPIC_API_KEY_ENV, &api_key);
+    serde_json::to_value(crate::secret_store::anthropic_secret_status())
+        .map_err(|error| format!("Could not read Claude key status: {error}"))
+}
+
+#[tauri::command]
+pub fn cmd_clear_anthropic_api_key() -> Result<serde_json::Value, String> {
+    crate::secret_store::clear_anthropic_api_key()?;
+    std::env::remove_var(crate::secret_store::ANTHROPIC_API_KEY_ENV);
+    serde_json::to_value(crate::secret_store::anthropic_secret_status())
+        .map_err(|error| format!("Could not read Claude key status: {error}"))
 }
 
 #[tauri::command]
@@ -11766,7 +11947,7 @@ mod tests {
     fn recall_chat_cancel_without_in_flight_turn_is_a_noop() {
         let state = test_app_state();
 
-        assert!(!cancel_recall_chat_turn(&state.recall_chat_turn));
+        assert!(cancel_recall_chat_turn(&state.recall_chat_turn).is_none());
         assert!(state.recall_chat_turn.lock().unwrap().is_none());
     }
 
@@ -11780,9 +11961,34 @@ mod tests {
     }
 
     #[test]
+    fn recall_chat_anthropic_stream_accepts_only_text_deltas() {
+        let text_delta = serde_json::json!({
+            "type": "content_block_delta",
+            "delta": {
+                "type": "text_delta",
+                "text": "Clear owners and next steps.",
+            },
+        });
+        let input_delta = serde_json::json!({
+            "type": "content_block_delta",
+            "delta": {
+                "type": "input_json_delta",
+                "partial_json": "{}",
+            },
+        });
+
+        assert_eq!(
+            recall_chat_anthropic_text_delta(&text_delta),
+            Some("Clear owners and next steps.")
+        );
+        assert_eq!(recall_chat_anthropic_text_delta(&input_delta), None);
+        assert_eq!(RECALL_CHAT_ANTHROPIC_MODEL, "claude-sonnet-4-20250514");
+    }
+
+    #[test]
     fn recall_chat_cancel_kills_live_tracked_child_and_clears_handle() {
         let state = test_app_state();
-        let (turn_id, _) = begin_recall_chat_turn(&state).unwrap();
+        let (turn_id, _) = begin_recall_chat_turn(&state, "test-window".into()).unwrap();
 
         #[cfg(unix)]
         let mut command = {
@@ -11822,7 +12028,10 @@ mod tests {
         #[cfg(unix)]
         std::thread::sleep(Duration::from_millis(100));
 
-        assert!(cancel_recall_chat_turn(&state.recall_chat_turn));
+        assert_eq!(
+            cancel_recall_chat_turn(&state.recall_chat_turn).as_deref(),
+            Some("test-window")
+        );
         assert!(state.recall_chat_turn.lock().unwrap().is_none());
         assert!(!minutes_core::pid::is_process_alive(child_pid));
     }
@@ -15868,7 +16077,7 @@ fn copilot_presentation_state(
 /// The legacy HUD remains a fixed non-activating overlay. Homebase has a
 /// responsive HUD with its own expanded and compact sizes.
 pub(crate) const COPILOT_HUD_SIZE: (f64, f64) = (572.0, 279.0);
-pub(crate) const HOMEBASE_COPILOT_HUD_SIZE: (f64, f64) = (520.0, 460.0);
+pub(crate) const HOMEBASE_COPILOT_HUD_SIZE: (f64, f64) = (560.0, 520.0);
 pub(crate) const HOMEBASE_COPILOT_HUD_COMPACT_SIZE: (f64, f64) = (340.0, 58.0);
 
 fn uses_homebase_copilot_hud(app: &tauri::AppHandle) -> bool {
@@ -15944,7 +16153,7 @@ fn show_copilot_hud(app: &tauri::AppHandle) -> Result<(), String> {
     .content_protected(true)
     .always_on_top(true)
     .focused(false)
-    .focusable(false)
+    .focusable(homebase_hud)
     .skip_taskbar(true)
     .build()
     .map(|_| ())
@@ -16467,8 +16676,10 @@ pub fn cmd_set_copilot_hud_compact(
     window
         .set_size(tauri::LogicalSize::new(width, height))
         .map_err(|error| format!("Could not resize the Coach window: {error}"))?;
+    // Compact mode remains edge-resizable. Dragging the pill taller reveals
+    // the responsive full Helper without requiring a separate expand click.
     window
-        .set_resizable(!compact)
+        .set_resizable(true)
         .map_err(|error| format!("Could not update Coach resize behavior: {error}"))
 }
 

@@ -23,6 +23,12 @@ declare global {
       event?: {
         listen?: Listen
       }
+      window?: {
+        getCurrentWindow?: () => {
+          close: () => Promise<void>
+          startDragging: () => Promise<void>
+        }
+      }
     }
   }
 }
@@ -177,6 +183,34 @@ export interface CopilotStatus {
     title?: string
   } | null
   criticalNotificationsEnabled?: boolean
+}
+
+export interface ClaudeSecretStatus {
+  supported: boolean
+  keySet: boolean
+  storedKeySet: boolean
+  storageLabel: string
+  envVar: string
+  message: string
+}
+
+export interface RecallChatChunk {
+  type?: string
+  text?: string
+  result?: string
+  event?: {
+    type?: string
+    delta?: {
+      type?: string
+      text?: string
+    }
+  }
+  message?: {
+    content?: Array<{
+      type?: string
+      text?: string
+    }>
+  }
 }
 
 export interface SearchHit {
@@ -489,6 +523,78 @@ export async function pauseMeetingHelper() {
 export async function resumeMeetingHelper() {
   const invoke = requireDesktopInvoke()
   return invoke<CopilotStatus>('cmd_resume_copilot_surface')
+}
+
+export async function finishMeetingHelper() {
+  const invoke = requireDesktopInvoke()
+  return invoke<void>('cmd_finish_copilot_surface')
+}
+
+export async function setMeetingHelperCompact(
+  compact: boolean,
+  restoreWidth?: number | null,
+  restoreHeight?: number | null,
+) {
+  const invoke = requireDesktopInvoke()
+  return invoke<void>('cmd_set_copilot_hud_compact', {
+    compact,
+    restoreWidth: restoreWidth ?? null,
+    restoreHeight: restoreHeight ?? null,
+  })
+}
+
+export async function sendRecallChatMessage(message: string) {
+  const normalized = message.trim()
+  if (!normalized) throw new Error('Write a question first.')
+  const invoke = requireDesktopInvoke()
+  return invoke<void>('cmd_recall_chat_send', { message: normalized })
+}
+
+export async function cancelRecallChat() {
+  const invoke = requireDesktopInvoke()
+  return invoke<void>('cmd_recall_chat_cancel')
+}
+
+export async function clearRecallChat() {
+  const invoke = requireDesktopInvoke()
+  return invoke<void>('cmd_recall_chat_clear')
+}
+
+export async function listenForRecallChat({
+  onChunk,
+  onDone,
+  onError,
+}: {
+  onChunk: (chunk: RecallChatChunk) => void
+  onDone: () => void
+  onError: (message: string) => void
+}): Promise<Unlisten> {
+  const listen = window.__TAURI__?.event?.listen
+  if (!listen) return () => undefined
+
+  const unlisten = await Promise.all([
+    listen('recall-chat-chunk', (event) => onChunk((event.payload || {}) as RecallChatChunk)),
+    listen('recall-chat-done', () => onDone()),
+    listen('recall-chat-error', (event) => onError(String(event.payload || 'Claude could not answer.'))),
+  ])
+  return () => unlisten.forEach((stop) => stop())
+}
+
+export async function getClaudeSecretStatus() {
+  const invoke = requireDesktopInvoke()
+  return invoke<ClaudeSecretStatus>('cmd_anthropic_secret_status')
+}
+
+export async function saveClaudeApiKey(apiKey: string) {
+  const normalized = apiKey.trim()
+  if (!normalized) throw new Error('Paste an API key first.')
+  const invoke = requireDesktopInvoke()
+  return invoke<ClaudeSecretStatus>('cmd_set_anthropic_api_key', { apiKey: normalized })
+}
+
+export async function clearClaudeApiKey() {
+  const invoke = requireDesktopInvoke()
+  return invoke<ClaudeSecretStatus>('cmd_clear_anthropic_api_key')
 }
 
 export async function getMicrophonePermission() {

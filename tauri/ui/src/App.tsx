@@ -8,6 +8,7 @@ FORM: Established app-shell extension with Galileo-style bipartite graph archite
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ForceGraph2D, { type ForceGraphMethods, type NodeObject } from 'react-force-graph-2d'
+import { AssistantChat, AssistantFrame } from './AssistantSurface'
 import {
   addRecordingNote,
   downloadSpeechModel,
@@ -1347,6 +1348,7 @@ function CapturePanel({
 }) {
   const [text, setText] = useState('')
   const [error, setError] = useState('')
+  const [view, setView] = useState<'capture' | 'chat'>('capture')
   const title = kind === 'todo' ? 'Capture action item' : 'Add recording note'
 
   const submit = async (event: React.FormEvent) => {
@@ -1364,48 +1366,71 @@ function CapturePanel({
   }
 
   return (
-    <section className="capture-panel" aria-labelledby="capture-panel-title">
-      <div className="capture-panel-header">
-        <div>
-          <span className="inspector-kicker">Live capture</span>
-          <h2 id="capture-panel-title">{title}</h2>
+    <div className="capture-assistant-scrim" role="presentation" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose()
+    }}>
+      <AssistantFrame
+        title={title}
+        subtitle={capture.recording ? 'Timestamped to the active recording' : 'Meeting-aware capture'}
+        status={(
+          <>
+            <span className={`capture-status-dot ${capture.recording ? 'recording' : ''}`} aria-hidden="true" />
+            <span>{capture.recording ? capture.elapsed || 'Recording' : 'Ready'}</span>
+          </>
+        )}
+        tabs={[
+          { id: 'capture', label: 'Capture' },
+          { id: 'chat', label: 'Ask Claude' },
+        ]}
+        activeTab={view}
+        onTabChange={(next) => setView(next as 'capture' | 'chat')}
+        onClose={onClose}
+        className="capture-assistant-frame"
+      >
+        <div className={`capture-assistant-pane ${view === 'capture' ? 'active' : ''}`}>
+          {capture.recording ? (
+            <form className="capture-assistant-form" onSubmit={submit}>
+              <label htmlFor="capture-note">{kind === 'todo' ? 'Action item' : 'Note'}</label>
+              <textarea
+                id="capture-note"
+                value={text}
+                maxLength={500}
+                placeholder={kind === 'todo' ? 'What needs to happen, and who owns it?' : 'What should Minutes remember?'}
+                onChange={(event) => setText(event.target.value)}
+                autoFocus
+              />
+              <div className="capture-assistant-footer">
+                <span>{text.length}/500</span>
+                <button type="submit" className="assistant-button" disabled={!text.trim() || Boolean(busy)}>
+                  {busy === 'note' ? 'Saving' : 'Save to recording'}
+                </button>
+              </div>
+              {error ? <div className="assistant-error" role="alert">{error}</div> : null}
+            </form>
+          ) : (
+            <div className="capture-assistant-idle">
+              <span className="inspector-kicker">Live capture</span>
+              <h2>Start a recording to timestamp this item</h2>
+              <p>Claude chat is available now. Direct notes and action items attach to the active meeting timeline.</p>
+              {error ? <div className="assistant-error" role="alert">{error}</div> : null}
+              <button
+                type="button"
+                className="assistant-button"
+                disabled={Boolean(busy)}
+                onClick={() => {
+                  void onStart().catch((nextError) => setError(errorMessage(nextError)))
+                }}
+              >
+                {busy === 'start' ? 'Starting' : 'Start recording'}
+              </button>
+            </div>
+          )}
         </div>
-        <button type="button" className="small-icon-button" aria-label="Close capture panel" onClick={onClose}>
-          <CloseIcon />
-        </button>
-      </div>
-      {capture.recording ? (
-        <form onSubmit={submit}>
-          <label htmlFor="capture-note" className="sr-only">{title}</label>
-          <textarea
-            id="capture-note"
-            value={text}
-            maxLength={500}
-            placeholder={kind === 'todo' ? 'What needs to happen, and who owns it?' : 'What should Minutes remember?'}
-            onChange={(event) => setText(event.target.value)}
-            autoFocus
-          />
-          {error ? <div className="setup-error" role="alert">{error}</div> : null}
-          <button type="submit" className="pill-button" disabled={!text.trim() || Boolean(busy)}>
-            {busy === 'note' ? 'Saving' : 'Save to recording'}
-          </button>
-        </form>
-      ) : (
-        <div className="capture-panel-idle">
-          <p>Notes and action items are timestamped against an active recording.</p>
-          <button
-            type="button"
-            className="pill-button"
-            disabled={Boolean(busy)}
-            onClick={() => {
-              void onStart().catch((error) => setError(errorMessage(error)))
-            }}
-          >
-            {busy === 'start' ? 'Starting' : 'Start recording'}
-          </button>
+        <div className={`capture-assistant-pane chat ${view === 'chat' ? 'active' : ''}`}>
+          <AssistantChat compact />
         </div>
-      )}
-    </section>
+      </AssistantFrame>
+    </div>
   )
 }
 

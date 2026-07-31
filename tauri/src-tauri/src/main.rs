@@ -1490,6 +1490,7 @@ fn main() {
         }
     }
     let _ = secret_store::hydrate_openai_compatible_api_key_env();
+    let _ = secret_store::hydrate_anthropic_api_key_env();
     let recording = Arc::new(AtomicBool::new(false));
     let starting = Arc::new(AtomicBool::new(false));
     let stop_flag = Arc::new(AtomicBool::new(false));
@@ -2711,6 +2712,9 @@ fn main() {
             commands::cmd_openai_compatible_secret_status,
             commands::cmd_set_openai_compatible_api_key,
             commands::cmd_clear_openai_compatible_api_key,
+            commands::cmd_anthropic_secret_status,
+            commands::cmd_set_anthropic_api_key,
+            commands::cmd_clear_anthropic_api_key,
             commands::cmd_set_setting,
             commands::cmd_set_screen_share_hidden,
             commands::cmd_get_autostart,
@@ -3047,7 +3051,7 @@ mod tray_activity_tests {
             ".content_protected(true)",
             ".always_on_top(true)",
             ".focused(false)",
-            ".focusable(false)",
+            ".focusable(homebase_hud)",
             ".skip_taskbar(true)",
         ] {
             assert!(
@@ -3072,23 +3076,35 @@ mod tray_activity_tests {
     #[test]
     fn homebase_copilot_hud_is_a_dedicated_interactive_surface() {
         let manifest = env!("CARGO_MANIFEST_DIR");
-        let hud = std::fs::read_to_string(format!("{}/../ui/copilot-hud.html", manifest))
-            .expect("failed to read Homebase Coach HUD");
+        let ui_root = format!("{}/../ui", manifest);
+        let hud = [
+            "copilot-hud.html",
+            "src/copilot-hud.tsx",
+            "src/copilot-hud.css",
+            "src/AssistantSurface.tsx",
+        ]
+        .iter()
+        .map(|path| {
+            std::fs::read_to_string(format!("{ui_root}/{path}"))
+                .unwrap_or_else(|_| panic!("failed to read Homebase Coach HUD source: {path}"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
 
         for contract in [
             "data-tauri-drag-region",
-            "currentWindow.startDragging()",
-            "id=\"close\"",
-            "currentWindow.close()",
+            "desktopWindow.startDragging()",
+            "Close Meeting Helper window",
+            "currentWindow()?.close()",
             "Points to cover",
             "Follow up",
             "Bring to attention",
-            "aria-expanded=\"true\"",
-            "cmd_finish_copilot_surface",
-            "cmd_set_copilot_hud_compact",
-            "cmd_capture_status",
-            "@media (max-height: 100px)",
-            "@media (min-width: 760px)",
+            "aria-expanded={!isCollapsed}",
+            "finishMeetingHelper",
+            "setMeetingHelperCompact",
+            "getCaptureStatus",
+            "window.innerHeight < 180",
+            "@media (min-width: 720px)",
             "box-shadow: none",
         ] {
             assert!(

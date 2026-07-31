@@ -34,4 +34,4 @@ npm --prefix tauri/ui run build
 cargo tauri build --bundles app --config tauri/src-tauri/tauri.homebase.conf.json --features parakeet,metal --no-sign
 ```
 
-When the UI runs inside Tauri, it loads meetings, upcoming events, meeting details, action items, recording state, permissions, local search, and Coach state from the existing Rust backend. In a normal browser it falls back to preview data.
+When the UI runs inside Tauri, it loads meetings, upcoming events, meeting details, action items, recording state, permissions, local search, and Coach state from the existing Rust backend. Meeting Helper and the to-do Capture flow share one guidance and chat surface. Chat uses a saved Anthropic key from macOS Keychain when configured, then falls back to the installed local agent or Ollama path. In a normal browser the app falls back to preview data.

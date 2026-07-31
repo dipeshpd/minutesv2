@@ -64,15 +64,6 @@ function CloseIcon() {
   )
 }
 
-function SettingsIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <circle cx="10" cy="10" r="2.4" />
-      <path d="M10 2.8v1.4m0 11.6v1.4M2.8 10h1.4m11.6 0h1.4M4.9 4.9l1 1m8.2 8.2 1 1m0-10.2-1 1m-8.2 8.2-1 1" />
-    </svg>
-  )
-}
-
 function ClearIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -108,8 +99,6 @@ export function AssistantFrame({
   className = '',
   children,
 }: AssistantFrameProps) {
-  const [settingsOpen, setSettingsOpen] = useState(false)
-
   return (
     <section className={`assistant-frame ${className}`.trim()}>
       <header className="assistant-header" data-tauri-drag-region={dragRegion ? '' : undefined}>
@@ -123,15 +112,6 @@ export function AssistantFrame({
         {status ? <div className="assistant-status" data-tauri-drag-region={dragRegion ? '' : undefined}>{status}</div> : null}
         <div className="assistant-window-actions">
           {actions}
-          <button
-            type="button"
-            className="assistant-icon-button"
-            aria-label="Claude settings"
-            title="Claude settings"
-            onClick={() => setSettingsOpen((open) => !open)}
-          >
-            <SettingsIcon />
-          </button>
           <button
             type="button"
             className="assistant-icon-button"
@@ -162,8 +142,21 @@ export function AssistantFrame({
       ) : null}
 
       <div className="assistant-body">{children}</div>
-      {settingsOpen ? <ClaudeSettings onClose={() => setSettingsOpen(false)} /> : null}
     </section>
+  )
+}
+
+export function ClaudeSettingsDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      className="assistant-settings-scrim"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <ClaudeSettings onClose={onClose} />
+    </div>
   )
 }
 
@@ -216,7 +209,7 @@ function ClaudeSettings({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="assistant-settings" role="dialog" aria-modal="true" aria-labelledby="claude-settings-title">
+    <section className="assistant-settings" role="dialog" aria-modal="true" aria-labelledby="claude-settings-title">
       <div className="assistant-settings-header">
         <div>
           <span>Provider</span>
@@ -259,7 +252,7 @@ function ClaudeSettings({ onClose }: { onClose: () => void }) {
       {!status?.keySet ? (
         <p className="assistant-provider-fallback">Without a key, Minutes keeps using your configured local provider or installed agent CLI.</p>
       ) : null}
-    </div>
+    </section>
   )
 }
 

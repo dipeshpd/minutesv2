@@ -257,11 +257,54 @@ button:disabled {
   margin-top: auto;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   padding: 10px;
   border-radius: 8px;
   color: var(--faint);
   font-size: 12px;
+}
+
+.sidebar-connection {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.sidebar-connection > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-settings-button {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.sidebar-settings-button:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.sidebar-settings-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .status-dot {
@@ -295,8 +338,7 @@ button:disabled {
 }
 
 .app-shell.nav-rail .brand div:not(.brand-mark),
-.app-shell.nav-rail .nav-item span,
-.app-shell.nav-rail .sidebar-footer span:not(.status-dot) {
+.app-shell.nav-rail .nav-item span {
   display: none;
 }
 
@@ -311,6 +353,10 @@ button:disabled {
   justify-content: center;
   padding-right: 0;
   padding-left: 0;
+}
+
+.app-shell.nav-rail .sidebar-connection {
+  display: none;
 }
 
 .workspace {
@@ -1630,9 +1676,16 @@ button:disabled {
   }
 
   .brand div:not(.brand-mark),
-  .nav-item span,
-  .sidebar-footer span:not(.status-dot) {
+  .nav-item span {
     display: none;
+  }
+
+  .sidebar-connection {
+    display: none;
+  }
+
+  .sidebar-footer {
+    justify-content: center;
   }
 
   .nav-item {

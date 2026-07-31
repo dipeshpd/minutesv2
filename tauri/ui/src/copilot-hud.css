@@ -237,7 +237,7 @@ textarea:focus-visible {
   position: absolute;
   top: 50%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   width: 100%;
   height: min(58px, 100%);
@@ -250,7 +250,7 @@ textarea:focus-visible {
   transform: translateY(-50%);
 }
 
-.hud-compact-expand {
+.hud-compact-main {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
@@ -258,11 +258,16 @@ textarea:focus-visible {
   min-width: 0;
   height: 100%;
   padding: 0 6px;
-  border: 0;
-  background: transparent;
   color: var(--text);
-  text-align: left;
   cursor: grab;
+}
+
+.hud-expand-button {
+  color: var(--text);
+}
+
+.hud-expand-button:hover {
+  background: var(--panel-soft);
 }
 
 .hud-compact-dot {

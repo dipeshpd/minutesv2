@@ -39,6 +39,7 @@ const stateLabels: Record<string, string> = {
 }
 
 const expandedSizeKey = 'minutes.homebase.coachExpandedSize'
+const fullSizeThreshold = { width: 500, height: 420 }
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error)
 
@@ -52,6 +53,14 @@ function Grip() {
 
 function CollapseIcon() {
   return <span className="hud-collapse-icon" aria-hidden="true" />
+}
+
+function ExpandIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M7.5 4H4v3.5M12.5 4H16v3.5M7.5 16H4v-3.5M12.5 16H16v-3.5" />
+    </svg>
+  )
 }
 
 function PauseIcon({ paused }: { paused: boolean }) {
@@ -73,7 +82,12 @@ function StopIcon() {
 function loadExpandedSize() {
   try {
     const stored = JSON.parse(localStorage.getItem(expandedSizeKey) || 'null')
-    if (Number.isFinite(stored?.width) && Number.isFinite(stored?.height)) {
+    if (
+      Number.isFinite(stored?.width)
+      && Number.isFinite(stored?.height)
+      && Number(stored.width) >= fullSizeThreshold.width
+      && Number(stored.height) >= fullSizeThreshold.height
+    ) {
       return { width: Number(stored.width), height: Number(stored.height) }
     }
   } catch {
@@ -91,7 +105,10 @@ function MeetingHelperHud() {
   const [capture, setCapture] = useState<RecordingStatus | null>(null)
   const [view, setView] = useState<HudView>('guide')
   const [draftSeed, setDraftSeed] = useState<ChatDraftSeed | null>(null)
-  const [compact, setCompact] = useState(window.innerHeight < 180)
+  const [viewport, setViewport] = useState({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  })
   const [error, setError] = useState('')
   const [controlBusy, setControlBusy] = useState('')
   const draftId = useRef(1)
@@ -99,6 +116,11 @@ function MeetingHelperHud() {
 
   const normalizedState = String(snapshot.state || 'off').toLowerCase()
   const stateLabel = stateLabels[normalizedState] || 'Limited'
+  const compact = viewport.height < 180
+  const needsExpand = (
+    viewport.width < fullSizeThreshold.width
+    || viewport.height < fullSizeThreshold.height
+  )
   const paused = snapshot.paused || normalizedState === 'paused'
   const recording = Boolean(capture?.recording || capture?.starting)
   const processing = Boolean(capture?.processing)
@@ -166,14 +188,22 @@ function MeetingHelperHud() {
 
   useEffect(() => {
     const onResize = () => {
+      const nextViewport = {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      }
       const nextCompact = window.innerHeight < 180
-      setCompact(nextCompact)
+      setViewport(nextViewport)
       if (resizeTimer.current !== null) window.clearTimeout(resizeTimer.current)
       resizeTimer.current = window.setTimeout(() => {
-        if (!nextCompact && window.innerWidth >= 380 && window.innerHeight >= 280) {
+        if (
+          !nextCompact
+          && nextViewport.width >= fullSizeThreshold.width
+          && nextViewport.height >= fullSizeThreshold.height
+        ) {
           localStorage.setItem(
             expandedSizeKey,
-            JSON.stringify({ width: window.innerWidth, height: window.innerHeight }),
+            JSON.stringify(nextViewport),
           )
         }
       }, 180)
@@ -202,7 +232,11 @@ function MeetingHelperHud() {
   }, [])
 
   const collapse = async () => {
-    if (!compact && window.innerWidth >= 380 && window.innerHeight >= 280) {
+    if (
+      !compact
+      && window.innerWidth >= fullSizeThreshold.width
+      && window.innerHeight >= fullSizeThreshold.height
+    ) {
       localStorage.setItem(
         expandedSizeKey,
         JSON.stringify({ width: window.innerWidth, height: window.innerHeight }),
@@ -265,18 +299,21 @@ function MeetingHelperHud() {
   if (compact) {
     return (
       <main className="hud-compact" data-recording={String(recording)} data-tauri-drag-region>
+        <div className="hud-compact-main" data-tauri-drag-region>
+          <span className="hud-compact-dot" aria-hidden="true" />
+          <span className="hud-compact-copy" data-tauri-drag-region>
+            <strong>{compactLabel}</strong>
+            <small>{compactMeta}</small>
+          </span>
+        </div>
         <button
           type="button"
-          className="hud-compact-expand"
+          className="assistant-icon-button hud-expand-button"
           onClick={() => void expand()}
           aria-label="Expand Meeting Helper"
           title="Expand Meeting Helper"
         >
-          <span className="hud-compact-dot" aria-hidden="true" />
-          <span className="hud-compact-copy">
-            <strong>{compactLabel}</strong>
-            <small>{compactMeta}</small>
-          </span>
+          <ExpandIcon />
         </button>
         <button type="button" className="hud-compact-close" aria-label="Close Meeting Helper window" title="Close Meeting Helper window" onClick={close}>
           ×
@@ -308,6 +345,17 @@ function MeetingHelperHud() {
         )}
         actions={(
           <>
+            {needsExpand ? (
+              <button
+                type="button"
+                className="assistant-icon-button hud-expand-button"
+                aria-label="Restore full Meeting Helper size"
+                title="Restore full size"
+                onClick={() => void expand()}
+              >
+                <ExpandIcon />
+              </button>
+            ) : null}
             <button
               type="button"
               className="assistant-icon-button"

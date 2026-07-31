@@ -8,7 +8,7 @@ FORM: Established app-shell extension with Galileo-style bipartite graph archite
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ForceGraph2D, { type ForceGraphMethods, type NodeObject } from 'react-force-graph-2d'
-import { AssistantChat, AssistantFrame } from './AssistantSurface'
+import { AssistantChat, AssistantFrame, ClaudeSettingsDialog } from './AssistantSurface'
 import {
   addRecordingNote,
   downloadSpeechModel,
@@ -150,6 +150,15 @@ function SidebarModeIcon({ action }: { action: 'expand' | 'rail' | 'hide' }) {
   )
 }
 
+function KeyIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <circle cx="7" cy="10" r="3.2" />
+      <path d="M10.2 10H17m-2.4 0v2.4M12.4 10v1.6" />
+    </svg>
+  )
+}
+
 function RecordIcon({ stop = false }: { stop?: boolean }) {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -184,12 +193,14 @@ function Sidebar({
   source,
   navMode,
   onModeChange,
+  onOpenSettings,
 }: {
   current: NavId
   onChange: (id: NavId) => void
   source: HomebaseData['source']
   navMode: NavMode
   onModeChange: (mode: NavMode) => void
+  onOpenSettings: () => void
 }) {
   const compact = navMode === 'rail'
 
@@ -246,8 +257,19 @@ function Sidebar({
         ))}
       </nav>
       <div className="sidebar-footer">
-        <span className={source === 'backend' ? 'status-dot' : 'status-dot preview'} />
-        <span>{source === 'backend' ? 'Connected to Minutes' : 'Desktop backend offline'}</span>
+        <div className="sidebar-connection">
+          <span className={source === 'backend' ? 'status-dot' : 'status-dot preview'} />
+          <span>{source === 'backend' ? 'Connected to Minutes' : 'Desktop backend offline'}</span>
+        </div>
+        <button
+          type="button"
+          className="sidebar-settings-button"
+          aria-label="Claude API key settings"
+          title="Claude API key settings"
+          onClick={onOpenSettings}
+        >
+          <KeyIcon />
+        </button>
       </div>
     </aside>
   )
@@ -1483,6 +1505,7 @@ export default function App() {
   const [meetingDetailBusy, setMeetingDetailBusy] = useState(false)
   const [meetingDetailError, setMeetingDetailError] = useState('')
   const [mapFocus, setMapFocus] = useState<string | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [toast, setToast] = useState('')
   const captureRef = useRef(capture)
 
@@ -1767,6 +1790,7 @@ export default function App() {
           source={homebase.source}
           navMode={navMode}
           onModeChange={setNavMode}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
       ) : (
         <button
@@ -1857,6 +1881,7 @@ export default function App() {
           onConfirm={confirmRecording}
         />
       ) : null}
+      {settingsOpen ? <ClaudeSettingsDialog onClose={() => setSettingsOpen(false)} /> : null}
       <div className={toast ? 'toast visible' : 'toast'} role="status" aria-live="polite">{toast}</div>
     </div>
   )

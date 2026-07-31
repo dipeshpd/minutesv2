@@ -145,13 +145,35 @@
   overflow: hidden;
 }
 
-.assistant-settings {
-  position: absolute;
+.assistant-settings-scrim {
+  position: fixed;
   inset: 0;
-  z-index: 12;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(10, 10, 10, 0.66);
+}
+
+.assistant-settings {
+  --assistant-panel: var(--shell, #20201f);
+  --assistant-surface: var(--panel-soft, #292928);
+  --assistant-line: var(--line, rgba(255, 255, 255, 0.09));
+  --assistant-line-strong: var(--line-strong, rgba(255, 255, 255, 0.16));
+  --assistant-text: var(--text, #eeeae2);
+  --assistant-muted: var(--muted, #aaa7a0);
+  --assistant-faint: var(--faint, #77736c);
+  --assistant-cyan: var(--cyan, #8bd5dd);
+  --assistant-coral: var(--coral, #ef8a79);
+  --assistant-green: var(--green, #68d985);
+  width: min(448px, 100%);
+  max-height: min(620px, calc(100vh - 48px));
   overflow-y: auto;
   padding: 18px;
-  background: var(--assistant-panel);
+  border: 1px solid var(--line-strong, rgba(255, 255, 255, 0.16));
+  border-radius: 10px;
+  background: var(--shell, #20201f);
+  color: var(--text, #eeeae2);
 }
 
 .assistant-settings-header {

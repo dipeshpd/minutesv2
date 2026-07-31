@@ -461,6 +461,16 @@ export async function stopRecording() {
   return invoke<void>('cmd_stop_recording')
 }
 
+export async function getMicrophoneMuted() {
+  const invoke = requireDesktopInvoke()
+  return invoke<boolean>('cmd_mic_mute_state')
+}
+
+export async function setMicrophoneMuted(muted: boolean) {
+  const invoke = requireDesktopInvoke()
+  return invoke<boolean>('cmd_toggle_mic_mute', { forceState: muted })
+}
+
 export async function addRecordingNote(text: string) {
   const normalized = text.trim()
   if (!normalized) throw new Error('Write a note before saving it.')

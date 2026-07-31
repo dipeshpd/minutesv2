@@ -15,6 +15,7 @@ import {
   getCaptureStatus,
   getMeetingDetail,
   getMeetingHelperStatus,
+  getMicrophoneMuted,
   getMicrophonePermission,
   getRecentLiveTranscript,
   isDesktopApp,
@@ -29,6 +30,7 @@ import {
   resumeMeetingHelper,
   searchLocalMemory,
   setupCoachModel,
+  setMicrophoneMuted,
   showMeetingHelper,
   startMeetingHelper,
   startRecording,
@@ -164,6 +166,34 @@ function RecordIcon({ stop = false }: { stop?: boolean }) {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true">
       {stop ? <rect x="6" y="6" width="8" height="8" rx="1.5" /> : <circle cx="10" cy="10" r="5" />}
+    </svg>
+  )
+}
+
+function CaptureCollapseIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M5 7.5h3V4.5M15 12.5h-3v3M8 7.5 4.5 4M12 12.5l3.5 3.5" />
+    </svg>
+  )
+}
+
+function CaptureExpandIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M7.5 4H4v3.5M12.5 4H16v3.5M7.5 16H4v-3.5M12.5 16H16v-3.5" />
+    </svg>
+  )
+}
+
+function CapturePauseIcon({ paused }: { paused: boolean }) {
+  return paused ? (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="m7 5 7 5-7 5V5Z" />
+    </svg>
+  ) : (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M7 5v10M13 5v10" />
     </svg>
   )
 }
@@ -1379,12 +1409,37 @@ function CapturePanel({
   const [transcriptStatus, setTranscriptStatus] = useState('')
   const [error, setError] = useState('')
   const [view, setView] = useState<'capture' | 'chat'>('capture')
+  const [collapsed, setCollapsed] = useState(false)
+  const [paused, setPaused] = useState(false)
+  const [audioBusy, setAudioBusy] = useState<'pause' | 'stop' | null>(null)
+  const [stoppedForTranscript, setStoppedForTranscript] = useState(false)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
   const isTodo = kind === 'todo'
   const title = isTodo ? 'To-do Helper' : 'Add recording note'
+  const transcriptPending = capture.processing || stoppedForTranscript
+  const stateLabel = paused && capture.recording
+    ? 'Paused'
+    : capture.recording
+      ? capture.elapsed || 'Recording'
+      : capture.starting
+        ? 'Starting'
+        : transcriptPending
+          ? capture.processingStageLabel || (capture.processing ? 'Transcribing' : 'Transcript ready')
+          : 'Ready'
+
+  const closeHelper = () => {
+    if (paused) void setMicrophoneMuted(false).catch(() => undefined)
+    onClose()
+  }
 
   useEffect(() => {
-    if (!isTodo || !capture.recording || view !== 'capture') return
+    if (!isTodo || view !== 'capture') return
+    const shouldPoll = (
+      capture.recording
+      || capture.processing
+      || (stoppedForTranscript && transcriptLineCount === 0)
+    )
+    if (!shouldPoll) return
 
     let disposed = false
     const refreshTranscript = async () => {
@@ -1409,7 +1464,46 @@ function CapturePanel({
       disposed = true
       window.clearInterval(timer)
     }
-  }, [capture.recording, isTodo, transcriptEdited, view])
+  }, [
+    capture.processing,
+    capture.recording,
+    isTodo,
+    stoppedForTranscript,
+    transcriptEdited,
+    transcriptLineCount,
+    view,
+  ])
+
+  useEffect(() => {
+    if (!isTodo || !capture.recording) {
+      if (!capture.starting) setPaused(false)
+      return
+    }
+
+    let disposed = false
+    const refreshPaused = () => {
+      void getMicrophoneMuted()
+        .then((next) => {
+          if (!disposed) setPaused(next)
+        })
+        .catch(() => undefined)
+    }
+    refreshPaused()
+    const timer = window.setInterval(refreshPaused, 1200)
+    return () => {
+      disposed = true
+      window.clearInterval(timer)
+    }
+  }, [capture.recording, capture.starting, isTodo])
+
+  useEffect(() => {
+    if (collapsed || !isTodo) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeHelper()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [collapsed, isTodo, onClose, paused])
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -1443,18 +1537,129 @@ function CapturePanel({
     setError('')
     try {
       if (capture.recording) {
-        await onStop()
+        await stopCapture()
       } else {
+        setStoppedForTranscript(false)
         await onStart()
+        if (isTodo) setCollapsed(true)
       }
     } catch (nextError) {
       setError(errorMessage(nextError))
     }
   }
 
+  const togglePause = async () => {
+    if (!capture.recording || audioBusy) return
+    setAudioBusy('pause')
+    setError('')
+    try {
+      const next = await setMicrophoneMuted(!paused)
+      setPaused(next)
+    } catch (nextError) {
+      setError(errorMessage(nextError))
+    } finally {
+      setAudioBusy(null)
+    }
+  }
+
+  const stopCapture = async () => {
+    if (!capture.recording || audioBusy) return
+    setAudioBusy('stop')
+    setError('')
+    try {
+      if (paused) await setMicrophoneMuted(false)
+      await onStop()
+      setPaused(false)
+      setStoppedForTranscript(true)
+      setCollapsed(false)
+      setView('capture')
+      setTranscriptStatus('Recording stopped. Minutes is preparing the transcript.')
+    } catch (nextError) {
+      setError(errorMessage(nextError))
+    } finally {
+      setAudioBusy(null)
+    }
+  }
+
+  if (isTodo && collapsed) {
+    return (
+      <aside
+        className={`todo-helper-pill${capture.recording ? ' is-recording' : ''}${capture.processing ? ' is-processing' : ''}${paused ? ' is-paused' : ''}`}
+        aria-label="To-do Helper recording controls"
+      >
+        <button
+          type="button"
+          className="todo-helper-pill-main"
+          aria-label="Expand To-do Helper"
+          title="Expand To-do Helper"
+          onClick={() => setCollapsed(false)}
+        >
+          <span className="todo-helper-pill-dot" aria-hidden="true" />
+          <span className="todo-helper-pill-copy">
+            <strong>To-do Helper</strong>
+            <small>{stateLabel}</small>
+          </span>
+        </button>
+        <button
+          type="button"
+          className="assistant-icon-button"
+          aria-label="Expand To-do Helper"
+          title="Expand To-do Helper"
+          onClick={() => setCollapsed(false)}
+        >
+          <CaptureExpandIcon />
+        </button>
+        {capture.recording ? (
+          <>
+            <button
+              type="button"
+              className="assistant-icon-button"
+              aria-label={paused ? 'Resume microphone capture' : 'Pause microphone capture'}
+              title={paused ? 'Resume microphone capture' : 'Pause microphone capture'}
+              disabled={Boolean(busy) || Boolean(audioBusy)}
+              onClick={() => void togglePause()}
+            >
+              <CapturePauseIcon paused={paused} />
+            </button>
+            <button
+              type="button"
+              className="assistant-icon-button todo-stop-control"
+              aria-label="Stop recording and start transcript"
+              title="Stop recording and start transcript"
+              disabled={Boolean(busy) || Boolean(audioBusy)}
+              onClick={() => void stopCapture()}
+            >
+              <RecordIcon stop />
+            </button>
+          </>
+        ) : !capture.starting && !capture.processing ? (
+          <button
+            type="button"
+            className="assistant-icon-button"
+            aria-label="Start recording"
+            title="Start recording"
+            disabled={Boolean(busy) || Boolean(audioBusy)}
+            onClick={() => void toggleRecording()}
+          >
+            <RecordIcon />
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="assistant-icon-button"
+          aria-label="Close To-do Helper"
+          title="Close To-do Helper"
+          onClick={closeHelper}
+        >
+          <CloseIcon />
+        </button>
+      </aside>
+    )
+  }
+
   return (
     <div className="capture-assistant-scrim" role="presentation" onMouseDown={(event) => {
-      if (event.target === event.currentTarget) onClose()
+      if (event.target === event.currentTarget) closeHelper()
     }}>
       <AssistantFrame
         title={title}
@@ -1465,21 +1670,47 @@ function CapturePanel({
             : 'Meeting-aware capture'}
         status={(
           <>
-            <span className={`capture-status-dot ${capture.recording ? 'recording' : ''}`} aria-hidden="true" />
-            <span>{capture.recording ? capture.elapsed || 'Recording' : capture.starting ? 'Starting' : 'Ready'}</span>
+            <span
+              className={`capture-status-dot${capture.recording ? ' recording' : ''}${paused ? ' paused' : ''}${transcriptPending ? ' processing' : ''}`}
+              aria-hidden="true"
+            />
+            <span>{stateLabel}</span>
           </>
         )}
         actions={isTodo ? (
-          <button
-            type="button"
-            className={`assistant-icon-button todo-audio-control${capture.recording ? ' recording' : ''}`}
-            aria-label={capture.recording ? 'Stop recording' : 'Start recording'}
-            title={capture.recording ? 'Stop recording' : 'Start recording'}
-            disabled={Boolean(busy) || capture.starting}
-            onClick={() => void toggleRecording()}
-          >
-            <RecordIcon stop={capture.recording} />
-          </button>
+          <>
+            <button
+              type="button"
+              className="assistant-icon-button"
+              aria-label="Collapse To-do Helper to recording pill"
+              title="Collapse to recording pill"
+              onClick={() => setCollapsed(true)}
+            >
+              <CaptureCollapseIcon />
+            </button>
+            {capture.recording ? (
+              <button
+                type="button"
+                className="assistant-icon-button"
+                aria-label={paused ? 'Resume microphone capture' : 'Pause microphone capture'}
+                title={paused ? 'Resume microphone capture' : 'Pause microphone capture'}
+                disabled={Boolean(busy) || Boolean(audioBusy)}
+                onClick={() => void togglePause()}
+              >
+                <CapturePauseIcon paused={paused} />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className={`assistant-icon-button todo-audio-control${capture.recording ? ' recording' : ''}`}
+              aria-label={capture.recording ? 'Stop recording and start transcript' : 'Start recording'}
+              title={capture.recording ? 'Stop recording and start transcript' : 'Start recording'}
+              disabled={Boolean(busy) || Boolean(audioBusy) || capture.starting || capture.processing}
+              onClick={() => void toggleRecording()}
+            >
+              <RecordIcon stop={capture.recording} />
+            </button>
+          </>
         ) : null}
         tabs={[
           { id: 'capture', label: isTodo ? 'To-do' : 'Capture' },
@@ -1487,7 +1718,7 @@ function CapturePanel({
         ]}
         activeTab={view}
         onTabChange={(next) => setView(next as 'capture' | 'chat')}
-        onClose={onClose}
+        onClose={closeHelper}
         modal
         className="capture-assistant-frame"
       >
@@ -1523,6 +1754,8 @@ function CapturePanel({
                       ? transcriptLineCount > 0
                         ? `${transcriptLineCount} transcript ${transcriptLineCount === 1 ? 'line' : 'lines'} ready to review`
                         : 'Listening for transcript'
+                      : transcriptPending
+                        ? capture.processingStageLabel || 'Preparing transcript'
                       : 'Add context or start recording'}
                   </small>
                 </span>
@@ -1547,10 +1780,16 @@ function CapturePanel({
               <footer className="todo-helper-footer">
                 <span role="status">
                   {transcriptStatus
-                    || (capture.recording
+                    || (paused && capture.recording
+                      ? 'Microphone paused. System audio may continue recording.'
+                      : capture.recording
                       ? transcriptEdited
                         ? 'Your edits are preserved while recording continues.'
                         : 'Live transcript will appear in the description.'
+                      : transcriptPending
+                        ? capture.processing
+                          ? capture.processingStageLabel || 'Minutes is transcribing the preserved audio.'
+                          : 'Transcript capture is complete. Review the text above.'
                       : 'Start recording to attach this to the current meeting.')}
                 </span>
                 <button

@@ -1496,6 +1496,7 @@ button:disabled {
   inset: 0;
   z-index: 24;
   background: rgba(12, 12, 12, 0.36);
+  animation: todo-helper-scrim-in 140ms ease-out both;
 }
 
 .capture-assistant-frame {
@@ -1507,6 +1508,8 @@ button:disabled {
   min-height: 330px;
   border-radius: 10px;
   box-shadow: none;
+  transform-origin: bottom right;
+  animation: todo-helper-expand-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .capture-status-dot {
@@ -1520,8 +1523,101 @@ button:disabled {
   background: #ff5f57;
 }
 
+.capture-status-dot.paused {
+  background: var(--faint);
+}
+
+.capture-status-dot.processing {
+  background: var(--cyan);
+}
+
 .todo-audio-control.recording {
   color: #ff8178;
+}
+
+.todo-stop-control {
+  color: #ff8178;
+}
+
+.todo-helper-pill {
+  position: absolute;
+  right: 20px;
+  bottom: 76px;
+  z-index: 25;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, 28px);
+  align-items: center;
+  width: min(350px, calc(100% - 40px));
+  min-height: 48px;
+  padding: 5px 7px 5px 9px;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--shell);
+  color: var(--text);
+  box-shadow: none;
+  transform-origin: bottom right;
+  animation: todo-helper-collapse-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.todo-helper-pill.is-recording {
+  grid-template-columns: minmax(0, 1fr) repeat(4, 28px);
+}
+
+.todo-helper-pill.is-processing {
+  grid-template-columns: minmax(0, 1fr) repeat(2, 28px);
+}
+
+.todo-helper-pill-main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 36px;
+  padding: 0 7px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.todo-helper-pill-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+}
+
+.todo-helper-pill.is-recording .todo-helper-pill-dot {
+  background: #ff5f57;
+}
+
+.todo-helper-pill.is-paused .todo-helper-pill-dot {
+  background: var(--faint);
+}
+
+.todo-helper-pill-copy {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 7px;
+}
+
+.todo-helper-pill-copy strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todo-helper-pill-copy small {
+  color: var(--muted);
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .todo-helper-form {
@@ -1624,6 +1720,33 @@ button:disabled {
   white-space: nowrap;
 }
 
+@keyframes todo-helper-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes todo-helper-expand-in {
+  from {
+    opacity: 0;
+    transform: translate3d(12px, 10px, 0) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes todo-helper-collapse-in {
+  from {
+    opacity: 0;
+    transform: translate3d(8px, -8px, 0) scale(1.04);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
 .capture-assistant-pane {
   display: none;
   width: 100%;
@@ -1722,6 +1845,58 @@ button:disabled {
 
   .todo-helper-footer .assistant-button {
     width: 100%;
+  }
+
+  .todo-helper-pill {
+    right: 10px;
+    bottom: 72px;
+    width: calc(100% - 20px);
+  }
+}
+
+@media (max-width: 430px) {
+  .capture-assistant-frame .assistant-header {
+    gap: 3px;
+    padding-left: 8px;
+  }
+
+  .capture-assistant-frame .assistant-title-copy span,
+  .capture-assistant-frame .assistant-status span:last-child {
+    display: none;
+  }
+
+  .todo-helper-pill {
+    grid-template-columns: minmax(0, 1fr) repeat(3, 26px);
+    padding-right: 5px;
+  }
+
+  .todo-helper-pill.is-recording {
+    grid-template-columns: minmax(0, 1fr) repeat(4, 26px);
+  }
+
+  .todo-helper-pill.is-processing {
+    grid-template-columns: minmax(0, 1fr) repeat(2, 26px);
+  }
+
+  .todo-helper-pill.is-recording {
+    grid-template-columns: minmax(0, 1fr) repeat(4, 26px);
+  }
+
+  .todo-helper-pill .assistant-icon-button {
+    width: 26px;
+    height: 26px;
+  }
+
+  .todo-helper-pill-copy small {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .capture-assistant-scrim,
+  .capture-assistant-frame,
+  .todo-helper-pill {
+    animation: none;
   }
 }
 

@@ -895,17 +895,95 @@ button:disabled {
     #171716;
 }
 
-.map-inspector {
+.map-inspector-shell {
   position: absolute;
   top: 12px;
   right: 12px;
   width: min(258px, calc(100% - 24px));
   max-height: calc(100% - 24px);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.map-inspector {
+  position: relative;
+  width: 100%;
+  max-height: inherit;
   padding: 12px;
   border-radius: 12px;
   overflow: auto;
   background: rgba(31, 31, 30, 0.78);
   backdrop-filter: blur(18px);
+  clip-path: inset(0 round 12px);
+  transform: translateX(0) scale(1);
+  transform-origin: top right;
+  opacity: 1;
+  pointer-events: auto;
+  transition:
+    clip-path 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 180ms ease;
+}
+
+.map-inspector-shell.is-collapsed .map-inspector {
+  clip-path: inset(0 0 100% 100% round 12px);
+  transform: translate(6px, -4px) scale(0.96);
+  opacity: 0;
+  pointer-events: none;
+  transition-duration: 160ms, 160ms, 120ms;
+}
+
+.map-inspector-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: rgba(31, 31, 30, 0.36);
+  color: var(--muted);
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.map-inspector-toggle:hover {
+  border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.075);
+  color: var(--text);
+}
+
+.map-inspector-shell.is-collapsed .map-inspector-toggle {
+  border-color: var(--line);
+  background: rgba(31, 31, 30, 0.82);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.map-inspector-toggle svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.inspector-toggle-icon {
+  transform: rotate(180deg);
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.inspector-toggle-icon.expanded {
+  transform: rotate(0);
 }
 
 .inspector-kicker,
@@ -927,6 +1005,7 @@ button:disabled {
 
 .map-inspector h2 {
   margin-bottom: 12px;
+  padding-right: 32px;
   font-size: 15px;
   font-weight: 650;
 }
@@ -1502,7 +1581,7 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
-  .map-inspector {
+  .map-inspector-shell {
     width: min(236px, calc(100% - 24px));
   }
 
@@ -1516,6 +1595,13 @@ button:disabled {
 
   .composer .composer-command:last-child {
     display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-inspector,
+  .inspector-toggle-icon {
+    transition: none;
   }
 }
 

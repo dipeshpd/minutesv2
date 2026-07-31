@@ -165,6 +165,18 @@ function CloseIcon() {
   )
 }
 
+function InspectorToggleIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      aria-hidden="true"
+      className={`inspector-toggle-icon${expanded ? ' expanded' : ''}`}
+    >
+      <path d="m7.5 5.5 4.5 4.5-4.5 4.5" />
+    </svg>
+  )
+}
+
 function Sidebar({
   current,
   onChange,
@@ -742,6 +754,7 @@ function ContextMapView({
   const hostRef = useRef<HTMLDivElement | null>(null)
   const [lens, setLens] = useState<MapLens>(focusLabel ? 'initiative' : 'all')
   const [selected, setSelected] = useState<GraphNode | null>(null)
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
   const [graphSize, setGraphSize] = useState({ width: 640, height: 440 })
 
   const data = useMemo(() => {
@@ -876,23 +889,41 @@ function ContextMapView({
             <div className="graph-empty">Record a meeting to build your local context map.</div>
           )}
         </div>
-        <aside className="map-inspector">
-          <span className="inspector-kicker">{selected ? selected.kind : 'selection'}</span>
-          <h2>{selected?.label ?? 'Recent conversation field'}</h2>
-          <div className="inspector-list">
-            {selectedMeetings.filter(Boolean).map((meeting) => (
-              <button
-                type="button"
-                className="inspector-item"
-                key={meeting!.id}
-                onClick={() => onOpenMeeting(meeting!)}
-              >
-                <span>{meeting!.title}</span>
-                <span>{meeting!.people.join(', ')}</span>
-              </button>
-            ))}
-          </div>
-        </aside>
+        <div className={`map-inspector-shell${inspectorCollapsed ? ' is-collapsed' : ''}`}>
+          <aside
+            id="context-map-inspector"
+            className="map-inspector"
+            aria-hidden={inspectorCollapsed}
+            inert={inspectorCollapsed}
+          >
+            <span className="inspector-kicker">{selected ? selected.kind : 'selection'}</span>
+            <h2>{selected?.label ?? 'Recent conversation field'}</h2>
+            <div className="inspector-list">
+              {selectedMeetings.filter(Boolean).map((meeting) => (
+                <button
+                  type="button"
+                  className="inspector-item"
+                  key={meeting!.id}
+                  onClick={() => onOpenMeeting(meeting!)}
+                >
+                  <span>{meeting!.title}</span>
+                  <span>{meeting!.people.join(', ')}</span>
+                </button>
+              ))}
+            </div>
+          </aside>
+          <button
+            type="button"
+            className="map-inspector-toggle"
+            aria-controls="context-map-inspector"
+            aria-expanded={!inspectorCollapsed}
+            aria-label={inspectorCollapsed ? 'Expand selection inspector' : 'Collapse selection inspector'}
+            title={inspectorCollapsed ? 'Expand inspector' : 'Collapse inspector'}
+            onClick={() => setInspectorCollapsed((collapsed) => !collapsed)}
+          >
+            <InspectorToggleIcon expanded={!inspectorCollapsed} />
+          </button>
+        </div>
       </section>
     </main>
   )

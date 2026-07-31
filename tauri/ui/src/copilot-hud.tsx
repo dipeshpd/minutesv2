@@ -79,6 +79,14 @@ function StopIcon() {
   return <span className="hud-stop-icon" aria-hidden="true" />
 }
 
+function CloseIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="m5.5 5.5 9 9m0-9-9 9" />
+    </svg>
+  )
+}
+
 function loadExpandedSize() {
   try {
     const stored = JSON.parse(localStorage.getItem(expandedSizeKey) || 'null')
@@ -125,19 +133,18 @@ function MeetingHelperHud() {
   const recording = Boolean(capture?.recording || capture?.starting)
   const processing = Boolean(capture?.processing)
 
-  const compactLabel = recording
-    ? 'Recording'
-    : processing
-      ? 'Processing meeting'
-      : snapshot.active
-        ? 'Helper active'
-        : 'Meeting Helper'
-
   const compactMeta = recording
     ? capture?.elapsed || 'Live'
     : processing
       ? capture?.processingStageLabel || 'Working'
       : stateLabel
+  const compactState = paused
+    ? ' is-paused'
+    : recording
+      ? ' is-recording'
+      : processing || normalizedState === 'arming' || normalizedState === 'thinking'
+        ? ' is-processing'
+        : ''
 
   useEffect(() => {
     let disposed = false
@@ -298,14 +305,23 @@ function MeetingHelperHud() {
 
   if (compact) {
     return (
-      <main className="hud-compact" data-recording={String(recording)} data-tauri-drag-region>
-        <div className="hud-compact-main" data-tauri-drag-region>
+      <main
+        className={`hud-compact${snapshot.active ? ' is-active' : ''}${compactState}`}
+        aria-label="Meeting Helper controls"
+      >
+        <button
+          type="button"
+          className="hud-compact-main"
+          aria-label="Expand Meeting Helper"
+          title="Expand Meeting Helper"
+          onClick={() => void expand()}
+        >
           <span className="hud-compact-dot" aria-hidden="true" />
-          <span className="hud-compact-copy" data-tauri-drag-region>
-            <strong>{compactLabel}</strong>
+          <span className="hud-compact-copy">
+            <strong>Meeting Helper</strong>
             <small>{compactMeta}</small>
           </span>
-        </div>
+        </button>
         <button
           type="button"
           className="assistant-icon-button hud-expand-button"
@@ -315,8 +331,38 @@ function MeetingHelperHud() {
         >
           <ExpandIcon />
         </button>
-        <button type="button" className="hud-compact-close" aria-label="Close Meeting Helper window" title="Close Meeting Helper window" onClick={close}>
-          ×
+        {snapshot.active ? (
+          <>
+            <button
+              type="button"
+              className="assistant-icon-button"
+              disabled={Boolean(controlBusy)}
+              aria-label={paused ? 'Resume meeting guidance' : 'Pause meeting guidance'}
+              title={paused ? 'Resume meeting guidance' : 'Pause meeting guidance'}
+              onClick={() => void togglePause()}
+            >
+              <PauseIcon paused={paused} />
+            </button>
+            <button
+              type="button"
+              className="assistant-icon-button hud-stop-button"
+              disabled={Boolean(controlBusy)}
+              aria-label="Stop Helper and open next steps"
+              title="Stop Helper and open next steps"
+              onClick={() => void finish()}
+            >
+              <StopIcon />
+            </button>
+          </>
+        ) : null}
+        <button
+          type="button"
+          className="assistant-icon-button"
+          aria-label="Close Meeting Helper window"
+          title="Close Meeting Helper window"
+          onClick={close}
+        >
+          <CloseIcon />
         </button>
       </main>
     )

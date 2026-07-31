@@ -11414,6 +11414,26 @@ mod tests {
         );
     }
 
+    #[test]
+    fn homebase_copilot_hud_uses_todo_helper_compact_anchor() {
+        assert_eq!(
+            homebase_copilot_hud_position(
+                (100.0, 50.0, 1440.0, 900.0),
+                HOMEBASE_COPILOT_HUD_COMPACT_SIZE,
+                true,
+            ),
+            (1170.0, 826.0),
+        );
+        assert_eq!(
+            homebase_copilot_hud_position(
+                (100.0, 50.0, 1440.0, 900.0),
+                HOMEBASE_COPILOT_HUD_SIZE,
+                false,
+            ),
+            (540.0, 318.0),
+        );
+    }
+
     fn test_guard() -> MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
@@ -16151,7 +16171,29 @@ fn copilot_presentation_state(
 /// responsive HUD with its own expanded and compact sizes.
 pub(crate) const COPILOT_HUD_SIZE: (f64, f64) = (572.0, 279.0);
 pub(crate) const HOMEBASE_COPILOT_HUD_SIZE: (f64, f64) = (560.0, 520.0);
-pub(crate) const HOMEBASE_COPILOT_HUD_COMPACT_SIZE: (f64, f64) = (340.0, 58.0);
+pub(crate) const HOMEBASE_COPILOT_HUD_COMPACT_SIZE: (f64, f64) = (350.0, 48.0);
+const HOMEBASE_COPILOT_HUD_COMPACT_INSET: (f64, f64) = (20.0, 76.0);
+const HOMEBASE_COPILOT_HUD_EXPANDED_INSET_Y: f64 = 112.0;
+
+fn homebase_copilot_hud_position(
+    work_area: (f64, f64, f64, f64),
+    window_size: (f64, f64),
+    compact: bool,
+) -> (f64, f64) {
+    let (work_x, work_y, work_width, work_height) = work_area;
+    let (width, height) = window_size;
+    if compact {
+        (
+            work_x + work_width - width - HOMEBASE_COPILOT_HUD_COMPACT_INSET.0,
+            work_y + work_height - height - HOMEBASE_COPILOT_HUD_COMPACT_INSET.1,
+        )
+    } else {
+        (
+            work_x + (work_width - width) / 2.0,
+            work_y + work_height - height - HOMEBASE_COPILOT_HUD_EXPANDED_INSET_Y,
+        )
+    }
+}
 
 fn uses_homebase_copilot_hud(app: &tauri::AppHandle) -> bool {
     app.config().identifier.ends_with(".homebase-dev")
@@ -16181,7 +16223,6 @@ fn show_copilot_hud(app: &tauri::AppHandle) -> Result<(), String> {
     let (width, height) = copilot_hud_size(app);
     // Sit above the dictation pill if both optional surfaces happen to be
     // active, rather than covering the existing overlay.
-    let inset_y = 112.0;
     let monitor = app
         .get_webview_window("main")
         .and_then(|window| window.current_monitor().ok().flatten())
@@ -16196,12 +16237,13 @@ fn show_copilot_hud(app: &tauri::AppHandle) -> Result<(), String> {
         let work_y = work_area.position.y as f64 / scale;
         let work_width = work_area.size.width as f64 / scale;
         let work_height = work_area.size.height as f64 / scale;
-        (
-            work_x + (work_width - width) / 2.0,
-            work_y + work_height - height - inset_y,
+        homebase_copilot_hud_position(
+            (work_x, work_y, work_width, work_height),
+            (width, height),
+            false,
         )
     } else {
-        ((1440.0 - width) / 2.0, 900.0 - height - inset_y)
+        homebase_copilot_hud_position((0.0, 0.0, 1440.0, 900.0), (width, height), false)
     };
 
     tauri::WebviewWindowBuilder::new(
@@ -16213,7 +16255,7 @@ fn show_copilot_hud(app: &tauri::AppHandle) -> Result<(), String> {
     .inner_size(width, height)
     .min_inner_size(
         if homebase_hud { 300.0 } else { width },
-        if homebase_hud { 58.0 } else { height },
+        if homebase_hud { 48.0 } else { height },
     )
     .position(x, y)
     .resizable(homebase_hud)
@@ -16744,11 +16786,52 @@ pub fn cmd_set_copilot_hud_compact(
         )
     };
     window
-        .set_min_size(Some(tauri::LogicalSize::new(300.0, 58.0)))
+        .set_min_size(Some(tauri::LogicalSize::new(300.0, 48.0)))
         .map_err(|error| format!("Could not update the Coach minimum size: {error}"))?;
     window
         .set_size(tauri::LogicalSize::new(width, height))
         .map_err(|error| format!("Could not resize the Coach window: {error}"))?;
+    let main_content_area = if compact {
+        app.get_webview_window("main").and_then(|main| {
+            let scale = main.scale_factor().ok()?;
+            let position = main.inner_position().ok()?;
+            let size = main.inner_size().ok()?;
+            Some((
+                position.x as f64 / scale,
+                position.y as f64 / scale,
+                size.width as f64 / scale,
+                size.height as f64 / scale,
+            ))
+        })
+    } else {
+        None
+    };
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten());
+    let (x, y) = if let Some(work_area) = main_content_area {
+        homebase_copilot_hud_position(work_area, (width, height), true)
+    } else if let Some(monitor) = monitor {
+        let scale = monitor.scale_factor();
+        let work_area = monitor.work_area();
+        homebase_copilot_hud_position(
+            (
+                work_area.position.x as f64 / scale,
+                work_area.position.y as f64 / scale,
+                work_area.size.width as f64 / scale,
+                work_area.size.height as f64 / scale,
+            ),
+            (width, height),
+            compact,
+        )
+    } else {
+        homebase_copilot_hud_position((0.0, 0.0, 1440.0, 900.0), (width, height), compact)
+    };
+    window
+        .set_position(tauri::LogicalPosition::new(x, y))
+        .map_err(|error| format!("Could not reposition the Coach window: {error}"))?;
     // Compact mode remains edge-resizable. Dragging the pill taller reveals
     // the responsive full Helper without requiring a separate expand click.
     window

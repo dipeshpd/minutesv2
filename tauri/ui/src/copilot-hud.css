@@ -234,20 +234,24 @@ textarea:focus-visible {
 }
 
 .hud-compact {
-  position: absolute;
-  top: 50%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) repeat(2, 28px);
   align-items: center;
   width: 100%;
-  height: min(58px, 100%);
-  padding: 0 7px 0 8px;
+  height: 100%;
+  min-height: 48px;
+  padding: 5px 7px 5px 9px;
   overflow: hidden;
   border: 1px solid var(--line-strong);
   border-radius: 999px;
   background: var(--shell);
+  color: var(--text);
   box-shadow: none;
-  transform: translateY(-50%);
+  transform-origin: bottom right;
+}
+
+.hud-compact.is-active {
+  grid-template-columns: minmax(0, 1fr) repeat(4, 28px);
 }
 
 .hud-compact-main {
@@ -256,10 +260,13 @@ textarea:focus-visible {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  height: 100%;
-  padding: 0 6px;
+  height: 36px;
+  padding: 0 7px;
+  border: 0;
+  background: transparent;
   color: var(--text);
-  cursor: grab;
+  text-align: left;
+  cursor: pointer;
 }
 
 .hud-expand-button {
@@ -277,8 +284,16 @@ textarea:focus-visible {
   background: var(--green);
 }
 
-.hud-compact[data-recording='true'] .hud-compact-dot {
+.hud-compact.is-recording .hud-compact-dot {
   background: #ff5f57;
+}
+
+.hud-compact.is-processing .hud-compact-dot {
+  background: var(--cyan);
+}
+
+.hud-compact.is-paused .hud-compact-dot {
+  background: var(--faint);
 }
 
 .hud-compact-copy {
@@ -301,26 +316,6 @@ textarea:focus-visible {
   font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
   font-size: 10px;
   white-space: nowrap;
-}
-
-.hud-compact-close {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  padding: 0 0 2px;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--muted);
-  font-size: 20px;
-  font-weight: 300;
-  cursor: pointer;
-}
-
-.hud-compact-close:hover {
-  background: var(--panel-soft);
-  color: var(--text);
 }
 
 @media (max-width: 430px) {
@@ -392,8 +387,24 @@ textarea:focus-visible {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .hud-compact[data-recording='true'] .hud-compact-dot {
+  .hud-compact {
+    animation: hud-compact-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .hud-compact.is-recording .hud-compact-dot {
     animation: hud-recording-pulse 1.2s ease-in-out infinite;
+  }
+
+  @keyframes hud-compact-in {
+    from {
+      opacity: 0;
+      transform: translate3d(8px, -8px, 0) scale(1.04);
+    }
+
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
   }
 
   @keyframes hud-recording-pulse {
